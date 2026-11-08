@@ -6,6 +6,7 @@ Este módulo NO descarga PDF, NO usa Gemini y NO escribe en Drive.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from datetime import datetime, timezone
 import re
 from typing import Any, Mapping
@@ -149,3 +150,43 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
         works=tuple(works),
         synced_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
+
+
+MAX_PILOT_PDF_BYTES = 8 * 1024 * 1024
+
+
+def download_verified_pdf(
+    service: Any, doc: DocumentRecord, expected_folder_id: str
+) -> bytes:
+    """Lee un PDF todavía presente en el expediente autorizado.
+
+    Verifica pertenencia a la carpeta, tipo, tamaño y contenido MD5 antes de
+    enviar datos a una API externa. No modifica Drive.
+    """
+    expected_folder_id = validate_id(expected_folder_id)
+    validate_id(doc.id)
+    metadata = service.files().get(
+        fileId=doc.id,
+        fields="id,name,mimeType,size,md5Checksum,parents,trashed",
+        supportsAllDrives=True,
+    ).execute()
+    if (
+        metadata.get("trashed")
+        or metadata.get("mimeType") != PDF_MIME
+        or expected_folder_id not in metadata.get("parents", [])
+    ):
+        raise DriveConnectionError("El PDF ya no pertenece a la carpeta seleccionada.")
+    size = int(metadata.get("size") or 0)
+    if not 0 < size <= MAX_PILOT_PDF_BYTES:
+        raise DriveConnectionError("El PDF excede el límite de 8 MB del piloto.")
+    if metadata.get("md5Checksum") != doc.md5_checksum:
+        raise DriveConnectionError("El PDF cambió desde la última consulta. Actualiza Drive.")
+    result = service.files().get_media(fileId=doc.id).execute()
+    if not isinstance(result, bytes) or not result.startswith(b"%PDF-"):
+        raise DriveConnectionError("No se recibió un PDF válido.")
+    if len(result) > MAX_PILOT_PDF_BYTES or len(result) != size:
+        raise DriveConnectionError("El tamaño del PDF cambió; actualiza Drive.")
+    digest = hashlib.md5(result).hexdigest()  # Solo verificación de integridad con Drive.
+    if digest != metadata.get("md5Checksum"):
+        raise DriveConnectionError("El PDF fue modificado durante la descarga.")
+    return result
