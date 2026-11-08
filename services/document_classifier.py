@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePath
+from zipfile import ZipFile
 import re
 import unicodedata
 
@@ -168,6 +169,19 @@ def classify_xlsx(data: bytes, name: str) -> Classification:
     if not data.startswith(b"PK"):
         return Classification(None, "Error de lectura", "El archivo no parece XLSX válido.")
     try:
+        # Limitar tamaño descomprimido; un XLSX pequeño puede contener
+        # entradas ZIP enormes. Rechazarlo antes de cargar openpyxl.
+        with ZipFile(BytesIO(data)) as archive:
+            members = archive.infolist()
+            if (
+                len(members) > 1200
+                or sum(item.file_size for item in members) > 80_000_000
+                or any(item.file_size > 40_000_000 for item in members)
+            ):
+                return Classification(
+                    suggested.code, "Sin estructura legible",
+                    "La estructura comprimida excede los límites de lectura segura.",
+                )
         from openpyxl import load_workbook
         wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
         try:
@@ -175,8 +189,8 @@ def classify_xlsx(data: bytes, name: str) -> Classification:
             for ws in wb.worksheets[:3]:
                 tokens.append(_normal(ws.title))
                 for row in ws.iter_rows(
-                    min_row=1, max_row=min(ws.max_row, 65),
-                    max_col=min(ws.max_column, 24), values_only=True
+                    min_row=1, max_row=min(ws.max_row or 65, 65),
+                    max_col=min(ws.max_column or 24, 24), values_only=True
                 ):
                     tokens.extend(_normal(str(v)) for v in row if v is not None)
             vocabulary = set(tokens)
