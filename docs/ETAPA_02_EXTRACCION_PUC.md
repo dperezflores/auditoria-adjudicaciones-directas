@@ -3,14 +3,15 @@
 ## Objetivo y alcance
 El archivo `PUC.pdf` se reconoce por su nombre estándar al sincronizar
 Google Drive, sin inspeccionar su contenido para clasificarlo. Al pulsar
-**Analizar PUC con IA**, Gemini lee exclusivamente ese PDF y extrae sus
+**Analizar documento(s) con IA**, Gemini lee exclusivamente ese PDF y extrae sus
 valores literales. Se conservan páginas, evidencias y especialidades;
 **NO se ejecutan todavía las cinco pruebas de adjudicación**.
 
-Los archivos `CONTRATO.pdf`, `DICTAMEN_AD.pdf`, `NOTIFICACION_AD.pdf`,
+Los archivos `CONTRATO.pdf`, `NOTIFICACION_AD.pdf`,
 `ORDEN_AD.pdf` y `CATALOGO.xlsx` no tienen extractor activado en esta
 etapa, aunque sí aparezcan registrados. CATALOGO.xlsx se leerá con Python
-posteriormente y no se envía a Gemini.
+posteriormente y no se envía a Gemini. `DICTAMEN_AD.pdf` cuenta con su propio
+extractor en la etapa 3, sin usar el esquema del PUC.
 
 ## Campos del PUC
 El esquema `puc-v1` conserva estos 18 valores con página y evidencia:
@@ -75,7 +76,7 @@ no se reintenta automáticamente: así evitamos cargos duplicados.
 3. En **Extracción documental**, elige ese PUC (o carpeta completa; se
    filtrarán los archivos de otros tipos). Verifica que la tabla indique
    `PUC-v1 disponible`.
-4. Pulsa **Analizar 1 PUC con IA**. Esta acción puede consumir tokens de
+4. Pulsa **Analizar 1 documento(s) con IA**. Esta acción puede consumir tokens de
    la API; no se llama a Gemini por abrir la pantalla.
 5. Después, en **Consultar análisis guardado**, elige el mismo `PUC.pdf`.
    Revisa el listado de 18 campos y la tabla de especialidades, incluidas
