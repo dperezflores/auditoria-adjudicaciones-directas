@@ -76,8 +76,11 @@ el PDF original de Drive. Reanalizar después puede generar cargos.
    análisis existentes del PUC y dictamen continúan intactos.
 
 ## Qué falta
-Los extractores `CONTRATO`, `ORDEN_AD` y `CATALOGO`
+Los extractores `CONTRATO` y `CATALOGO`
 permanecen pendientes de implementación. Para `CATALOGO.xlsx`
 se prevé lectura estructurada con Python, sin envío a Gemini.
 Las cinco pruebas de auditoría y los cruces se implementarán después,
 como procesos separados de extracción.
+
+**Actualización:** el extractor de `ORDEN_AD` está disponible desde
+la etapa 5. [Ver guía](ETAPA_05_EXTRACCION_ORDEN_AD.md).
