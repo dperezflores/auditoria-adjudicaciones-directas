@@ -34,8 +34,9 @@ Los cuatro indicadores se recalculan con los filtros activos:
 ## Filtros, listado y detalle
 Filtros por texto (obra, número o contratista), año de firma, contratista y
 estado. El listado contiene número de contrato, nombre de obra, contratista,
-monto con IVA, porcentaje de anticipo, firma, inicio, término y
-cobertura de campos. Seleccionar una fila muestra la ficha completa.
+monto con IVA, porcentaje de anticipo, año de firma y cobertura de campos.
+Seleccionar una fila muestra la ficha completa, incluidas fechas literales
+de firma, inicio y término.
 
 El detalle incluye un apartado desplegable con páginas y fragmentos de
 evidencia conservados en el JSON de extracción. La ficha permite abrir el
