@@ -62,3 +62,36 @@ cuenta y facturación en Google AI Studio. Si aparece
 Si `HTTP_403`, revisar permisos; si `HTTP_429`, límites de uso.
 
 No repetir solicitudes automáticamente.
+
+
+## Corrección adicional tras el segundo HTTP 400
+
+La solicitud `contrato-prompt-v2` también fue rechazada con
+`HTTP_400_INVALID_ARGUMENT`, pese a que la clave sí podía consultar
+los metadatos del modelo. Esto **no demuestra** por sí solo qué parámetro
+exacto rechazó Google.
+
+La investigación detectó que se enviaba directamente un esquema Pydantic
+anidado (`ExtraccionContrato`) mediante `response_schema`. Google
+documenta que los esquemas complejos pueden producir HTTP 400.
+
+**Cambios realizados en v3:**
+- Se sustituyó `response_schema=ExtraccionContrato` por un esquema JSON
+  compacto en `response_json_schema`, con una sola lista de campos.
+- Se mantiene `application/json`, sin temperatura personalizada.
+- Los ocho datos mantienen `valor`, `pagina` y `evidencia`.
+- La validación Pydantic se aplica **después de recibir** la respuesta.
+- Se rechazan campos inesperados, valores duplicados y páginas inválidas.
+- La configuración utiliza `contrato-prompt-v3`, que crea una clave de
+  caché nueva, sin borrar los registros fallidos de v1/v2.
+
+Se añadieron pruebas sin llamadas a Gemini, incluida la construcción local
+de la configuración del SDK `google-genai`. Esto disminuye riesgos pero
+**no garantiza** que el endpoint remoto acepte la siguiente solicitud.
+
+**Próxima comprobación:** únicamente contrato simulado; una sola solicitud
+bajo confirmación del auditor, con `Reintentar` desmarcado. Si vuelve a
+aparecer HTTP 400, detener las pruebas de generación y evaluar un
+diagnóstico más fino sin seguir consumiendo llamadas repetidas.
+
+Referencia: https://ai.google.dev/gemini-api/docs/structured-output
