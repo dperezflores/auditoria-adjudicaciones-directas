@@ -1,7 +1,7 @@
 """Explorador operativo de obras y PDFs: seleccionar 1, varios o toda carpeta.
 
 No hay carga a Gemini al navegar, listar carpetas o consultar resultados.
-El análisis solamente inicia con confirmación y pulsación del usuario.
+El análisis se solicita únicamente al pulsar el botón habilitado del extractor.
 """
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from services.analysis_catalog import (
 from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
-from services.extraction_store_v2 import extract_or_reuse_v2
 from services.puc_schema import PUC_LABELS, PucExtractionV1
 from services.puc_store import extract_or_reuse_puc
 from services.document_analysis import GeneralAnalysis
@@ -225,7 +224,7 @@ def _analyze(
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
-                # En esta etapa no existe ruta Gemini para otros tipos.
+                # Validación temprana: nunca procesar como PUC otro tipo.
                 if code_from_filename(doc.name, doc.mime_type) != "PUC":
                     raise ExtractionStateError(
                         "Este documento no es PUC.pdf; extractor no disponible."
