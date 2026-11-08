@@ -15,6 +15,8 @@ from services.analysis_catalog import (
     FileStatus, file_states, folder_states, load_status_tables, suggest_kind,
 )
 from services.contract_schema import ExtraccionContrato
+from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
+from services.extraction_store_v2 import extract_or_reuse_v2
 from services.document_analysis import GeneralAnalysis, analyze_document
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
@@ -102,6 +104,30 @@ def _summarize_saved(
                         st.write(f"• {alert}")
             except Exception:
                 st.warning("La respuesta guardada no cumple el esquema documental actual.")
+        elif old["version_esquema"] == "contrato-v2":
+            try:
+                result = ContractExtractionV2.model_validate_json(old["resultado_json"])
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Campo": label,
+                        "Texto literal": getattr(result, name).valor or "No localizado",
+                        "Página": getattr(result, name).pagina,
+                        "Evidencia": getattr(result, name).evidencia or "Sin evidencia",
+                    }
+                    for name, label in FIELD_LABELS_V2
+                ]), hide_index=True, use_container_width=True)
+                if result.personas_participantes:
+                    st.markdown("**Personas que participan en el contrato**")
+                    st.dataframe(pd.DataFrame([
+                        item.model_dump(mode="json")
+                        for item in result.personas_participantes
+                    ]), hide_index=True, use_container_width=True)
+                st.caption(
+                    "Ámbito normativo citado (clasificación preliminar): " +
+                    classify_cited_regime(result.legislacion_citada.valor)
+                )
+            except Exception:
+                st.warning("El registro contractual v2 no pudo interpretarse.")
         elif old["version_esquema"] == "contrato-v1":
             try:
                 parsed = ExtraccionContrato.model_validate_json(old["resultado_json"])
@@ -143,6 +169,7 @@ def _summarize_saved(
 
 def _analyze(
     obra: WorkRecord, selection: list[DocumentRecord], model: str,
+    analysis_choice: str = "Automático",
 ) -> list[dict[str, str]]:
     """Analiza secuencialmente con límite explícito de trabajo por sesión."""
     log = []
@@ -158,11 +185,18 @@ def _analyze(
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
-                if suggest_kind(doc.name) == "contrato":
-                    result = extract_or_reuse(
+                use_contract = (
+                    analysis_choice == "Contrato completo (16 campos)"
+                    or (
+                        analysis_choice == "Automático"
+                        and suggest_kind(doc.name) == "contrato"
+                    )
+                )
+                if use_contract:
+                    result = extract_or_reuse_v2(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
                         pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
-                        model=model, allow_retry=False,
+                        model=model,
                     )
                     reused = result.cached
                 else:
@@ -350,6 +384,21 @@ def render_expedientes(authenticated: bool) -> None:
         selected = doc_ids
         st.caption("Se seleccionarán todos los PDF de la carpeta.")
 
+    analysis_choice = st.selectbox(
+        "Plantilla de extracción",
+        [
+            "Automático",
+            "Contrato completo (16 campos)",
+            "Ficha documental general",
+        ],
+        index=0,
+        key="ex_analysis_choice",
+        help=(
+            "Automático utiliza el nombre del archivo. Si un contrato tiene "
+            "un nombre abreviado o ya se analizó con una plantilla antigua, "
+            "elige Contrato completo para obtener los 16 campos y participantes."
+        ),
+    )
     chosen = [doc for doc in obra.pdfs if doc.id in selected]
     st.caption(
         f"Seleccionados: {len(chosen)} archivos · "
@@ -362,7 +411,11 @@ def render_expedientes(authenticated: bool) -> None:
                 "Tamaño (MB)": round(d.size_bytes / 1_000_000, 2) if d.size_bytes else None,
                 "Estado actual": states[d.id].label,
                 "Análisis propuesto": (
-                    "Contrato" if suggest_kind(d.name) == "contrato" else "Ficha documental"
+                    "Contrato ampliado (16 campos)"
+                    if (
+                        analysis_choice == "Contrato completo (16 campos)"
+                        or (analysis_choice == "Automático" and suggest_kind(d.name) == "contrato")
+                    ) else "Ficha documental"
                 ),
                 "Compatibilidad": (
                     "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
@@ -387,11 +440,44 @@ def render_expedientes(authenticated: bool) -> None:
             f"{len(unknown_size)} PDF no informa(n) tamaño en Drive. "
             "Actualiza el inventario antes de analizarlos."
         )
-    to_process = [
-        doc for doc in chosen
-        if states[doc.id].label in ("Pendiente", "Sin registrar", "Desactualizado")
-        and 0 < doc.size_bytes <= MAX_PDF_BYTES
-    ]
+    # Nueva plantilla contractual sobre un análisis antiguo = nueva
+    # solicitud EXPLÍCITA, nunca al refrescar la pantalla. Si ya existe v2,
+    # se reutiliza y no se envía a Gemini.
+    forced_contract = analysis_choice == "Contrato completo (16 campos)"
+    previous_v2 = {
+        a["documento_id"]: a["estado"]
+        for a in tables["Extracciones"]
+        if a["version_esquema"] == "contrato-v2"
+        and a["documento_id"] in {x.id for x in chosen}
+    }
+    to_process = []
+    for doc in chosen:
+        if not (0 < doc.size_bytes <= MAX_PDF_BYTES):
+            continue
+        state = states[doc.id].label
+        if forced_contract and state == "Analizado":
+            if doc.id in previous_v2:
+                continue
+            to_process.append(doc)
+        elif state in ("Pendiente", "Sin registrar", "Desactualizado"):
+            to_process.append(doc)
+    if forced_contract and any(
+        doc.id in previous_v2 and previous_v2[doc.id] != "COMPLETADO"
+        for doc in chosen
+    ):
+        st.warning(
+            "Ya hay una solicitud de contrato v2 sin confirmar para algún PDF. "
+            "No se repetirá automáticamente; revisa Extracciones."
+        )
+    if forced_contract and any(
+        states[d.id].label == "Analizado" and d.id not in previous_v2
+        for d in to_process
+    ):
+        st.info(
+            "Seleccionaste una extracción ampliada sobre un documento "
+            "analizado con otra plantilla. Esto generará una nueva solicitud "
+            "a Gemini, conservará el resultado anterior y registrará la versión v2."
+        )
     batch = to_process[:MAX_BATCH] if mode == "Carpeta completa" else to_process
     if mode == "Carpeta completa" and len(to_process) > MAX_BATCH:
         st.info(
@@ -400,7 +486,7 @@ def render_expedientes(authenticated: bool) -> None:
             "podrás repetir para continuar con los siguientes."
         )
     skips = sum(
-        states[d.id].label not in ("Pendiente", "Sin registrar", "Desactualizado")
+        0 < d.size_bytes <= MAX_PDF_BYTES and d.id not in {x.id for x in to_process}
         for d in chosen
     )
     if skips:
@@ -424,7 +510,7 @@ def render_expedientes(authenticated: bool) -> None:
         f"Analizar {len(batch)} documento(s) con IA",
         type="primary", disabled=disabled, key="ex_analyze",
     ):
-        st.session_state["ex_last_run"] = _analyze(obra, batch, model)
+        st.session_state["ex_last_run"] = _analyze(obra, batch, model, analysis_choice)
         st.rerun()
 
     if st.session_state.get("ex_last_run"):
