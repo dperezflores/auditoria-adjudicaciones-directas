@@ -79,6 +79,8 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(result.works[0].pdfs[0].name, "Contrato.pdf")
         self.assertEqual(result.works[0].pdfs[1].md5_checksum, "abcd1234")
         self.assertEqual(result.works[0].pdfs[0].id, "filePDF2222")
+        self.assertEqual(len(result.works[0].other_files), 1)
+        self.assertEqual(result.works[0].other_files[0].name, "Imagen.jpg")
 
     def test_pagination_no_documents_lost(self):
         data = self.sample_data()
