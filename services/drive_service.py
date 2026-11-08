@@ -188,7 +188,28 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
     )
 
 
-MAX_PILOT_PDF_BYTES = 20 * 1024 * 1024
+# Google Gemini admite PDF de hasta 50 MB; usamos MB decimales.
+# Mantener este límite en Drive y en la interfaz para evitar llamadas inválidas.
+MAX_PDF_BYTES = 50_000_000
+# Alias de compatibilidad para consumidores anteriores.
+MAX_PILOT_PDF_BYTES = MAX_PDF_BYTES
+
+
+def check_pdf_size(size_bytes: int) -> None:
+    """Validar tamaño antes de descargar o consultar Gemini."""
+    if not isinstance(size_bytes, int) or size_bytes <= 0:
+        raise DriveConnectionError(
+            "Drive no informa un tamaño válido para el PDF. "
+            "Actualiza el inventario antes de analizar."
+        )
+    if size_bytes > MAX_PDF_BYTES:
+        raise DriveConnectionError(
+            f"El PDF mide {size_bytes / 1_000_000:.2f} MB y supera el límite "
+            "admitido de 50 MB. Reduce o divide el documento antes de analizarlo."
+        )
+
+
+
 
 
 def download_verified_pdf(
@@ -233,14 +254,14 @@ def download_verified_pdf(
         else:
             raise DriveConnectionError("No se pudo verificar la ruta de la subcarpeta.")
     size = int(metadata.get("size") or 0)
-    if not 0 < size <= MAX_PILOT_PDF_BYTES:
-        raise DriveConnectionError("El PDF supera el límite operativo de 20 MB.")
+    check_pdf_size(size)
     if metadata.get("md5Checksum") != doc.md5_checksum:
         raise DriveConnectionError("El PDF cambió desde la última consulta. Actualiza Drive.")
     result = service.files().get_media(fileId=doc.id).execute()
     if not isinstance(result, bytes) or not result.startswith(b"%PDF-"):
         raise DriveConnectionError("No se recibió un PDF válido.")
-    if len(result) > MAX_PILOT_PDF_BYTES or len(result) != size:
+    check_pdf_size(len(result))
+    if len(result) != size:
         raise DriveConnectionError("El tamaño del PDF cambió; actualiza Drive.")
     digest = hashlib.md5(result).hexdigest()  # Solo verificación de integridad con Drive.
     if digest != metadata.get("md5Checksum"):
