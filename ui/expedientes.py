@@ -413,8 +413,8 @@ def _render_delete_analysis(
                 st.session_state.pop(confirm_key, None)
                 st.session_state["ex_delete_success"] = (
                     f"Análisis eliminado de {doc.name}. "
-                    "El archivo sigue en Drive y puede volver a analizarse "
-                    "con el extractor habilitado."
+                    "El archivo sigue en Drive. Puede volver a analizarse "
+                    "si su tipo tiene un extractor habilitado."
                 )
                 st.rerun()
             except ExtractionStateError as exc:
