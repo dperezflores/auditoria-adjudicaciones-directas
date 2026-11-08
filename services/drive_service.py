@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 PDF_MIME = "application/pdf"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 _ID = re.compile(r"^[A-Za-z0-9_-]{10,}$")
 _FILE_FIELDS = "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum,size,webViewLink,trashed)"
@@ -267,3 +268,61 @@ def download_verified_pdf(
     if digest != metadata.get("md5Checksum"):
         raise DriveConnectionError("El PDF fue modificado durante la descarga.")
     return result
+
+
+MAX_XLSX_BYTES = 15_000_000
+
+
+def download_verified_xlsx(
+    service: Any, doc: DocumentRecord, expected_folder_id: str
+) -> bytes:
+    """Descarga Excel real con comprobación de pertenencia, MIME y MD5.
+
+    Se ejecuta únicamente cuando el usuario solicita verificar el tipo;
+    no utiliza IA ni permisos de escritura en Drive.
+    """
+    expected_folder_id = validate_id(expected_folder_id)
+    validate_id(doc.id)
+    if doc.mime_type != XLSX_MIME:
+        raise DriveConnectionError("El documento seleccionado no es un XLSX.")
+    metadata = service.files().get(
+        fileId=doc.id,
+        fields="id,name,mimeType,size,md5Checksum,parents,trashed",
+        supportsAllDrives=True,
+    ).execute()
+    parent_id = validate_id(doc.parent_id or expected_folder_id)
+    if (
+        metadata.get("trashed")
+        or metadata.get("mimeType") != XLSX_MIME
+        or parent_id not in metadata.get("parents", [])
+    ):
+        raise DriveConnectionError("El Excel ya no pertenece a la carpeta seleccionada.")
+    if parent_id != expected_folder_id:
+        current = parent_id
+        for _ in range(7):
+            ancestor = service.files().get(
+                fileId=current, fields="id,mimeType,parents,trashed",
+                supportsAllDrives=True,
+            ).execute()
+            if ancestor.get("trashed") or ancestor.get("mimeType") != FOLDER_MIME:
+                raise DriveConnectionError("La subcarpeta del Excel ya no es válida.")
+            ancestors = ancestor.get("parents") or []
+            if expected_folder_id in ancestors:
+                break
+            if not ancestors:
+                raise DriveConnectionError("El Excel no pertenece a la obra autorizada.")
+            current = validate_id(ancestors[0])
+        else:
+            raise DriveConnectionError("No se verificó la ruta de la subcarpeta.")
+    size = int(metadata.get("size") or 0)
+    if size <= 0 or size > MAX_XLSX_BYTES:
+        raise DriveConnectionError("El Excel no tiene un tamaño admisible (máximo 15 MB).")
+    if not doc.md5_checksum or doc.md5_checksum != metadata.get("md5Checksum"):
+        raise DriveConnectionError("El Excel cambió desde la última consulta a Drive.")
+    raw = service.files().get_media(fileId=doc.id).execute()
+    if (
+        not isinstance(raw, bytes) or not raw.startswith(b"PK")
+        or len(raw) != size or hashlib.md5(raw).hexdigest() != doc.md5_checksum
+    ):
+        raise DriveConnectionError("El Excel no coincide con los metadatos verificados.")
+    return raw
