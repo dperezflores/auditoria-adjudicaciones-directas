@@ -72,3 +72,9 @@ Consulta [la guía de cotejo manual](docs/COTEJO_MANUAL_CONTRATOS.md).
 La pantalla principal ya no es la demostración: ahora muestra **Expedientes**, **Resultados** y **Pruebas de adjudicación**. Desde Expedientes se ven carpetas y archivos, el estado de análisis por PDF y carpeta, y se pueden seleccionar **un PDF, varios PDFs o una carpeta completa** para analizarlos en una misma ejecución con Gemini. Los análisis se almacenan en Google Sheets y se reutilizan cuando ya existe un resultado compatible. No se generan análisis al navegar.
 
 Lee [el manual operativo](docs/INTERFAZ_OPERATIVA_EXPEDIENTES.md) antes de conectar expedientes reales. La raíz actual de Drive sigue siendo la carpeta anteriormente configurada; para trabajar en otro repositorio, comparte la nueva carpeta con la cuenta de servicio y actualiza solo `[drive].root_folder_id` en los secretos de Streamlit. **Las pruebas normativas cruzadas todavía están por implementar.**
+
+## Extracción contractual ampliada (v2)
+
+La plantilla `Contrato completo (16 campos)` conserva literalmente los valores del contrato (incluidas mayúsculas, puntuación, importes y fechas), incorpora una lista de personas participantes y registra la legislación citada y la fuente de financiamiento. La clasificación federal, estatal o municipal es **preliminar y derivada**, no un dictamen sobre límites de adjudicación.
+
+Los resultados nuevos se guardan en `DatosContratoV2` y en el JSON de `Extracciones`, sin alterar `DatosContrato` v1. En **Resultados**, al seleccionar una obra en la tabla se actualiza su ficha con datos, participantes, legislación y evidencias. [Ver instrucciones](docs/EXTRACCION_CONTRATOS_V2.md).
