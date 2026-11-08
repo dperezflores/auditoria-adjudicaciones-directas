@@ -9,6 +9,7 @@ import streamlit as st
 from security.app_access import require_access
 from ui.drive_explorer import render_drive_explorer
 from services.drive_service import is_configured
+from services.sheets_service import storage_configured
 
 st.set_page_config(page_title="AuditorIA | Adjudicaciones directas", page_icon="📋", layout="wide")
 
@@ -16,6 +17,7 @@ st.set_page_config(page_title="AuditorIA | Adjudicaciones directas", page_icon="
 access_granted = require_access()
 # Un secreto presente no garantiza una conexión exitosa a Drive.
 drive_secrets_present = access_granted and is_configured(st.secrets)
+storage_secrets_present = access_granted and storage_configured(st.secrets)
 
 st.markdown("""
 <style>
@@ -46,13 +48,13 @@ with st.sidebar:
     st.success("Datos ficticios en las vistas de demostración")
     st.write("Drive: credenciales preparadas, acceso aún no verificado" if drive_secrets_present else "Drive: pendiente de configuración")
     st.write("Gemini: inactivo")
-    st.write("Persistencia: solo esta sesión")
+    st.write("Sheets: configurado" if storage_secrets_present else "Sheets: pendiente de configuración")
     st.divider()
     st.caption("Conexión Drive solo de lectura. No utilizar documentación confidencial en este piloto sin autorización institucional.")
 
 st.title("AuditorIA")
 st.caption("Revisión de adjudicaciones directas de obra pública")
-st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta únicamente metadatos si se configura la cuenta de servicio. No hay análisis con IA.")
+st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta metadatos y permite guardarlos en Google Sheets. No hay análisis con IA.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Explorador demo", "Pruebas de auditoría", "Dashboard general", "Google Drive (piloto)"])
 
@@ -128,4 +130,4 @@ with tab3:
 with tab4:
     render_drive_explorer(access_granted)
 
-st.caption("AuditorIA · Primera entrega técnica · Conector Drive opcional, solo entorno autorizado")
+st.caption("AuditorIA · Piloto · Drive y registro de metadatos; Gemini todavía inactivo")
