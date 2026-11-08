@@ -3,12 +3,12 @@
 Piloto para la revisión documental y pruebas de auditoría de adjudicación directa de obra pública en Guanajuato.
 
 ## Estado actual
-**Etapa 4: extracción especializada de PUC, DICTAMEN_AD y NOTIFICACION_AD.**
+**Etapa 5: extracción especializada de PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD.**
 Google Drive y Google Sheets están conectados, la clasificación documental
 se realiza por nombre y se guarda en la hoja maestra. El extractor
 `PUC-v1` obtiene 18 campos literales y la lista de especialidades,
 con página y evidencia, en `DatosPUC` y `Extracciones`.
-PUC, DICTAMEN_AD y NOTIFICACION_AD tienen extractores independientes; los demás permanecen pendientes.
+PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD tienen extractores independientes; CONTRATO y CATALOGO permanecen pendientes.
 
 ## Objetivo
 1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
@@ -111,7 +111,7 @@ como `POR_IDENTIFICAR`.
 
 El tipo asignado se guarda en `Documentos.tipo_documental` durante
 **Actualizar Google Drive**; la pantalla de verificación por contenido fue
-retirada. La IA solo se ejecuta bajo demanda para PUC, DICTAMEN_AD y NOTIFICACION_AD; el resto
+retirada. La IA solo se ejecuta bajo demanda para PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD; el resto
 permanece sin extractor especializado.
 
 [Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
@@ -158,3 +158,15 @@ con evidencia y caché por archivo/modelo/versión. El botón para eliminar
 el análisis también cubre este tipo documental.
 No se calculan todavía fechas límite ni se aplican pruebas de auditoría.
 [Guía de extracción y validación](docs/ETAPA_04_EXTRACCION_NOTIFICACION_AD.md).
+
+
+## Etapa 5 — ORDEN_AD-v1
+
+La orden de adjudicación es **opcional** en el expediente. Si existe
+`ORDEN_AD.pdf`, su extractor obtiene 22 campos literales y listas
+de personal designado, instrucciones, plazos, fundamentos y documentos
+citados. Se guardan con página y evidencia en `DatosOrdenAD` y
+`Extracciones`. La eliminación de análisis también se aplica a este
+tipo documental. No se emiten todavía pruebas de cumplimiento.
+
+[Guía de extracción y prueba de la orden](docs/ETAPA_05_EXTRACCION_ORDEN_AD.md).
