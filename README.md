@@ -46,6 +46,10 @@ El proyecto preparado para las siguientes integraciones es `auditoria-ad-piloto`
 
 ## Sincronización inicial de Google Drive
 
-El módulo `services/drive_service.py` lista carpetas y metadatos PDF únicamente cuando se completa la configuración privada de una cuenta de servicio. No descarga archivos ni ejecuta IA. Consulta [la guía de conexión central de Drive](docs/CONEXION_DRIVE_CUENTA_SERVICIO.md) antes de configurar credenciales.
+El módulo `services/drive_service.py` lista carpetas y metadatos PDF con la cuenta de servicio. `services/sync_engine.py` y `services/sheets_service.py` registran obras y documentos en Google Sheets mediante el botón **Actualizar Google Drive**, una vez configurada la sección `[storage]` en Streamlit Secrets. No descarga archivos ni ejecuta IA. Consulta [la guía de conexión central de Drive](docs/CONEXION_DRIVE_CUENTA_SERVICIO.md) antes de configurar credenciales.
 
-**Limitación actual:** no se conserva un historial de sincronizaciones entre sesiones; el control de cambios persistente se implementará junto con Google Sheets.
+**Limitación:** Google Sheets conserva el historial, pero no admite escrituras transaccionales concurrentes desde varias réplicas. Se utiliza un único proceso escritor durante este piloto y las actualizaciones son manuales.
+
+## Activar persistencia
+
+Sigue [la guía de registro persistente](docs/REGISTRO_PERSISTENTE_SHEETS.md) para añadir a Streamlit Secrets el ID de la hoja ya creada. **Nunca compartas las claves privadas de la cuenta de servicio.**
