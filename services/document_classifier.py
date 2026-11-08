@@ -24,8 +24,8 @@ PDF_CODES = tuple(code for code in DOCUMENT_CODES if code != "CATALOGO")
 # Los códigos están vinculados a la extensión real y al tipo MIME de Drive.
 # Se ignoran únicamente diferencias de mayúsculas/minúsculas en el nombre.
 FILENAME_CODES: dict[tuple[str, str], str] = {
-    **{(f"{code}.pdf", PDF_MIME): code for code in PDF_CODES},
-    ("CATALOGO.xlsx", XLSX_MIME): "CATALOGO",
+    **{(f"{code}.PDF", PDF_MIME): code for code in PDF_CODES},
+    ("CATALOGO.XLSX", XLSX_MIME): "CATALOGO",
 }
 
 
