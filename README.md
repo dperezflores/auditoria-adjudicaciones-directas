@@ -3,17 +3,19 @@
 Piloto para la revisión documental y pruebas de auditoría de adjudicación directa de obra pública en Guanajuato.
 
 ## Estado actual
-**Etapa 5: extracción especializada de PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD.**
+**Etapa 6: importación del catálogo original desde Excel, sin IA.**
 Google Drive y Google Sheets están conectados, la clasificación documental
 se realiza por nombre y se guarda en la hoja maestra. El extractor
 `PUC-v1` obtiene 18 campos literales y la lista de especialidades,
 con página y evidencia, en `DatosPUC` y `Extracciones`.
-PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD tienen extractores independientes; CONTRATO y CATALOGO permanecen pendientes.
+CONTRATO, PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD tienen extractores especializados.
+CATALOGO.xlsx se procesa mediante lectura directa del Excel, sin Gemini, y conserva
+solo conceptos originales.
 
 ## Objetivo
-1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
-2. Extraer con Gemini datos del contrato, PUC, dictamen, notificación y catálogo.
-3. Conservar las extracciones y evitar repetir procesamiento de PDF sin cambios.
+1. Detectar obras y documentos PDF/XLSX en una carpeta central de Google Drive.
+2. Extraer con Gemini datos de los PDF y leer CATALOGO.xlsx sin IA.
+3. Conservar los resultados y evitar repetir el procesamiento de documentos sin cambios.
 4. Ejecutar cinco pruebas: capital contable, especialidad, vigencia PUC, responsable técnico y secuencia de fechas.
 5. Mostrar resultados por obra y dashboard de la muestra.
 
@@ -111,8 +113,8 @@ como `POR_IDENTIFICAR`.
 
 El tipo asignado se guarda en `Documentos.tipo_documental` durante
 **Actualizar Google Drive**; la pantalla de verificación por contenido fue
-retirada. La IA solo se ejecuta bajo demanda para PUC, DICTAMEN_AD, NOTIFICACION_AD y ORDEN_AD; el resto
-permanece sin extractor especializado.
+retirada. La IA solo se ejecuta a demanda para los PDF con esquema habilitado; CATALOGO.xlsx
+se importa por lectura local y no consume tokens de Gemini.
 
 [Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
 
@@ -170,3 +172,13 @@ citados. Se guardan con página y evidencia en `DatosOrdenAD` y
 tipo documental. No se emiten todavía pruebas de cumplimiento.
 
 [Guía de extracción y prueba de la orden](docs/ETAPA_05_EXTRACCION_ORDEN_AD.md).
+
+## Etapa 6 — CATALOGO.xlsx (sin IA)
+
+Se incorpora el prefiniquito en Excel con el nombre CATALOGO.xlsx. El extractor
+importa la clave, descripción, unidad, cantidad Inicial, Precio U. e importe
+original calculado; excluye Excedente, Total Aut., presupuestos adicionales y
+los capítulos FUERA DE CATÁLOGO. Conserva el detalle por concepto en DatosCatalogo,
+el resumen en Extracciones y ofrece consulta desde Expedientes y Resultados.
+
+[Guía de uso de CATALOGO.xlsx](docs/ETAPA_06_CATALOGO_XLSX.md).
