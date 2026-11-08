@@ -67,7 +67,7 @@ el PDF original de Drive. Reanalizar después puede generar cargos.
 4. Confirma que la tabla muestre `notificacion-ad-v1`.
 5. Pulsa **Analizar 1 documento(s) con IA** (solicitud con posible consumo).
 6. En **Consultar análisis guardado**, selecciona la notificación.
-7. Revisa especialmente que **fecha de emisión** y **recepción/acuso**
+7. Revisa especialmente que **fecha de emisión** y **recepción/acuse**
    sean campos distintos, y que los registros PUC de
    **contratista** y **supervisor externo** no se confundan.
 8. Comprueba las obligaciones, plazos literales, evento de inicio,
