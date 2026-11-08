@@ -30,9 +30,20 @@ class AnalysisInterfaceTests(unittest.TestCase):
         self.assertIn("result = extract_or_reuse_v2(", source)
         self.assertIn("CONTRATO-v2 (16 campos)", source)
         self.assertIn("if pending_attempt:", source)
+        self.assertIn('needs_sync += 1', source)
+        self.assertIn("Pulsa Actualizar Google Drive", source)
         self.assertNotIn(
             'pending_attempt or states[doc.id].label in ("Parcial", "Revisar error")', source
         )
+
+    def test_results_are_scoped_to_current_work_folder(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "ui" / "expedientes.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('st.session_state["ex_last_run_obra_id"] = obra.id', source)
+        self.assertIn('st.session_state.get("ex_last_run_obra_id") == obra.id', source)
+        self.assertIn('st.session_state.pop("ex_last_run", None)', source)
+        self.assertIn("No hay documentos pendientes para procesar", source)
 
     def test_analysis_remains_manual(self):
         source = (

@@ -34,6 +34,28 @@ class FilenameClassificationTests(unittest.TestCase):
         self.assertIsNone(code_from_filename("PADRON.pdf", PDF_MIME))
         self.assertIsNone(code_from_filename("CNT_DIR_CNT.pdf", PDF_MIME))
 
+    def test_space_before_extension_in_second_work_folder(self):
+        # Nombres observados directamente en Drive (carpeta 00_117_25).
+        for name, code in (
+            ("CONTRATO .pdf", "CONTRATO"),
+            ("PUC .pdf", "PUC"),
+            ("DICTAMEN_AD .pdf", "DICTAMEN_AD"),
+            ("NOTIFICACION_AD  .PDF", "NOTIFICACION_AD"),
+            ("ORDEN_AD\u00a0.pdf", "ORDEN_AD"),
+            ("CATALOGO .xlsx", "CATALOGO"),
+        ):
+            mime = XLSX_MIME if name.upper().endswith("XLSX") else PDF_MIME
+            with self.subTest(name=name):
+                self.assertEqual(code_from_filename(name, mime), code)
+                self.assertEqual(guess_from_name(name, mime).label, code)
+
+    def test_spaces_do_not_allow_different_document_names(self):
+        for name in ("CONTRATO FINAL .pdf", "CONTRATO (1) .pdf",
+                     "PUC actual .pdf", "DICTAMEN .pdf"):
+            with self.subTest(name=name):
+                self.assertIsNone(code_from_filename(name, PDF_MIME))
+        self.assertIsNone(code_from_filename("PUC .pdf", XLSX_MIME))
+
     def test_unknown_or_unrelated_files_never_receive_an_incorrect_code(self):
         for name in (
             "DICTAMEN TECNICO.pdf", "DICTAMEN.pdf", "ORDEN DE COMPRA.pdf",

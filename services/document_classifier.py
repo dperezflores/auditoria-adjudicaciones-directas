@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import PurePath
+import re
 
 PDF_MIME = "application/pdf"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -22,7 +23,8 @@ DOCUMENT_CODES = (
 PDF_CODES = tuple(code for code in DOCUMENT_CODES if code != "CATALOGO")
 
 # Los códigos están vinculados a la extensión real y al tipo MIME de Drive.
-# Se ignoran únicamente diferencias de mayúsculas/minúsculas en el nombre.
+# Además de mayúsculas/minúsculas, se toleran espacios accidentales JUSTO
+# antes de la extensión, sin admitir nombres de documentos alternativos.
 FILENAME_CODES: dict[tuple[str, str], str] = {
     **{(f"{code}.PDF", PDF_MIME): code for code in PDF_CODES},
     ("CATALOGO.XLSX", XLSX_MIME): "CATALOGO",
@@ -44,10 +46,14 @@ class Classification:
 def code_from_filename(name: str, mime_type: str) -> str | None:
     """Resolver el tipo EXCLUSIVAMENTE por nombre y MIME, sin leer el archivo.
 
-    Ejemplo: 'PUC.pdf' -> 'PUC'. 'DICTAMEN TECNICO.pdf' -> None:
-    es diferente de un DICTAMEN_AD, así que debe renombrarse correctamente.
+    Ejemplo: 'PUC.pdf' y 'PUC .pdf' -> 'PUC'.
+    'DICTAMEN TECNICO.pdf' -> None: no es el tipo DICTAMEN_AD.
     """
     basename = PurePath(name).name.strip().upper()
+    # Google Drive puede contener "CONTRATO .pdf" o "PUC .pdf". Eliminar
+    # únicamente blancos inmediatamente anteriores a la extensión conocida;
+    # no reinterpretar palabras, sufijos, copias ni el tipo MIME declarado.
+    basename = re.sub(r"\s+(?=\.(?:PDF|XLSX)$)", "", basename)
     return FILENAME_CODES.get((basename, mime_type))
 
 
