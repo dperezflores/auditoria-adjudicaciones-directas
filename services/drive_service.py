@@ -36,6 +36,7 @@ class DocumentRecord:
     url: str = ""
     parent_id: str = ""
     relative_path: str = ""
+    mime_type: str = PDF_MIME
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class WorkRecord:
     name: str
     pdfs: tuple[DocumentRecord, ...] = field(default_factory=tuple)
     url: str = ""
+    other_files: tuple[DocumentRecord, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,7 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
         if folder.get("mimeType") != FOLDER_MIME:
             continue
         pdfs = []
+        other_files = []
         # Explorar también subcarpetas de expediente (p. ej. PUC, Contratos,
         # Dictámenes) sin salir del directorio de la obra autorizada.
         pending = [(folder["id"], "", 0)]
@@ -147,12 +150,12 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
                         depth + 1,
                     ))
                     continue
-                if item.get("mimeType") != PDF_MIME or item["id"] in seen_files:
+                if item["id"] in seen_files:
                     continue
                 seen_files.add(item["id"])
                 if len(seen_files) > 3000:
-                    raise DriveConnectionError("Hay demasiados PDF en una sola obra.")
-                pdfs.append(DocumentRecord(
+                    raise DriveConnectionError("Hay demasiados archivos en una sola obra.")
+                record = DocumentRecord(
                     id=item["id"],
                     name=item.get("name", "Sin nombre"),
                     modified_time=item.get("modifiedTime") or "",
@@ -161,13 +164,20 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
                     url=item.get("webViewLink") or "",
                     parent_id=parent_id,
                     relative_path=relative,
-                ))
+                    mime_type=item.get("mimeType") or "",
+                )
+                if record.mime_type == PDF_MIME:
+                    pdfs.append(record)
+                else:
+                    other_files.append(record)
         pdfs.sort(key=lambda f: (f.relative_path.casefold(), f.name.casefold(), f.id))
+        other_files.sort(key=lambda f: (f.relative_path.casefold(), f.name.casefold(), f.id))
         works.append(WorkRecord(
             id=folder["id"],
             name=folder.get("name") or "Obra sin nombre",
             pdfs=tuple(pdfs),
             url=folder.get("webViewLink") or "",
+            other_files=tuple(other_files),
         ))
     works.sort(key=lambda x: (x.name.casefold(), x.id))
     return DriveInventory(
