@@ -1,101 +1,53 @@
-"""Clasificación sin IA: nombres, contenido y reglas anti-confusión."""
-from __future__ import annotations
-
-from io import BytesIO
+"""El tipo documental depende exclusivamente del nombre y del MIME de Drive."""
 import unittest
 
-from openpyxl import Workbook
-
 from services.document_classifier import (
-    PDF_MIME, XLSX_MIME, DOCUMENT_CODES, _identify_text, _reconcile,
-    classify_pdf, classify_xlsx, guess_from_name,
+    DOCUMENT_CODES, PDF_MIME, XLSX_MIME, code_from_filename, guess_from_name,
 )
 
 
-def workbook_bytes(*, catalog: bool) -> bytes:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Prefiniquito" if catalog else "Hoja de salarios"
-    if catalog:
-        ws.append(["CLAVE", "DESCRIPCIÓN", "UNIDAD", "INICIAL", "PRECIO U."])
-        ws.append(["101", "PAVIMENTO DE CONCRETO", "M2", 100, 320])
-    else:
-        ws.append(["NOMBRE", "SUELDO", "SEMANA"])
-    raw = BytesIO()
-    wb.save(raw)
-    wb.close()
-    return raw.getvalue()
-
-
-class ClassificationTests(unittest.TestCase):
-    def test_six_codes_are_exact(self):
-        self.assertEqual(DOCUMENT_CODES, (
-            "CONTRATO", "PUC", "CATALOGO", "DICTAMEN_AD",
-            "NOTIFICACION_AD", "ORDEN_AD",
-        ))
-
-    def test_filename_suggestions_are_not_verified(self):
-        examples = {
+class FilenameClassificationTests(unittest.TestCase):
+    def test_six_document_codes_and_canonical_filenames(self):
+        expected = {
             "CONTRATO.pdf": "CONTRATO",
-            "CNT_DIR_CNT.pdf": "CONTRATO",
             "PUC.pdf": "PUC",
-            "PADRON .pdf": "PUC",
             "DICTAMEN_AD.pdf": "DICTAMEN_AD",
             "NOTIFICACION_AD.pdf": "NOTIFICACION_AD",
             "ORDEN_AD.pdf": "ORDEN_AD",
+            "CATALOGO.xlsx": "CATALOGO",
         }
-        for name, code in examples.items():
-            with self.subTest(name=name):
-                item = guess_from_name(name, PDF_MIME)
-                self.assertEqual(item.code, code)
-                self.assertFalse(item.confirmed)
-        self.assertEqual(guess_from_name("CATALOGO.xlsx", XLSX_MIME).code, "CATALOGO")
+        self.assertEqual(len(DOCUMENT_CODES), 6)
+        for name, code in expected.items():
+            mime = XLSX_MIME if name.endswith(".xlsx") else PDF_MIME
+            with self.subTest(file=name):
+                self.assertEqual(code_from_filename(name, mime), code)
+                classification = guess_from_name(name, mime)
+                self.assertEqual(classification.code, code)
+                self.assertTrue(classification.confirmed)
+                self.assertEqual(classification.status, "Asignado por nombre")
 
-    def test_generic_dictamen_tecnico_does_not_become_ad(self):
-        self.assertIsNone(guess_from_name("DICTAMEN TECNICO.pdf", PDF_MIME).code)
-        self.assertIsNone(guess_from_name("LISTADO.pdf", PDF_MIME).code)
-        self.assertIsNone(guess_from_name("ORDEN DE COMPRA.pdf", PDF_MIME).code)
+    def test_case_insensitive_but_exact_document_codes(self):
+        self.assertEqual(code_from_filename("puc.PDF", PDF_MIME), "PUC")
+        self.assertEqual(code_from_filename("contrato.pdf", PDF_MIME), "CONTRATO")
+        self.assertEqual(code_from_filename("catalogo.XLSX", XLSX_MIME), "CATALOGO")
+        self.assertIsNone(code_from_filename("PUC (1).pdf", PDF_MIME))
+        self.assertIsNone(code_from_filename("PADRON.pdf", PDF_MIME))
+        self.assertIsNone(code_from_filename("CNT_DIR_CNT.pdf", PDF_MIME))
 
-    def test_content_classifies_titles_not_generic_mentions(self):
-        examples = {
-            "DICTAMEN DE AUTORIZACIÓN DE ADJUDICACIÓN DIRECTA": "DICTAMEN_AD",
-            "NOTIFICACIÓN DE ADJUDICACIÓN DIRECTA": "NOTIFICACION_AD",
-            "ORDEN DE ADJUDICACIÓN DIRECTA": "ORDEN_AD",
-            "INFORMACIÓN DEL PADRÓN ÚNICO DE CONTRATISTAS DEL ESTADO": "PUC",
-            "CONTRATO DE OBRA PÚBLICA A PRECIOS UNITARIOS": "CONTRATO",
-        }
-        for title, code in examples.items():
-            self.assertEqual(_identify_text("DIRECCIÓN GENERAL DE OBRA PÚBLICA. " + title), code)
-        self.assertIsNone(_identify_text(
-            "Se acreditó con su registro del PUC y con un dictamen técnico."
-        ))
+    def test_unknown_or_unrelated_files_never_receive_an_incorrect_code(self):
+        for name in (
+            "DICTAMEN TECNICO.pdf", "DICTAMEN.pdf", "ORDEN DE COMPRA.pdf",
+            "PUC_ANTERIOR.pdf", "PRESUPUESTO.xlsx", "CONTRATO_BORRADOR.pdf",
+        ):
+            mime = XLSX_MIME if name.endswith(".xlsx") else PDF_MIME
+            with self.subTest(file=name):
+                self.assertIsNone(code_from_filename(name, mime))
+                self.assertEqual(guess_from_name(name, mime).label, "POR_IDENTIFICAR")
 
-    def test_content_can_override_unknown_name_but_conflicts_blocked(self):
-        unknown = guess_from_name("DGOP_587.pdf", PDF_MIME)
-        verified = _reconcile(unknown, "DICTAMEN_AD", readable=True)
-        self.assertTrue(verified.confirmed)
-        self.assertEqual(verified.code, "DICTAMEN_AD")
-        conflict = _reconcile(guess_from_name("PUC.pdf", PDF_MIME), "CONTRATO", readable=True)
-        self.assertEqual(conflict.status, "Inconsistente")
-        self.assertFalse(conflict.confirmed)
-        self.assertIsNone(conflict.code)
-
-    def test_image_pdf_is_not_confirmed_automatically(self):
-        scanned = classify_pdf(b"%PDF-1.4\nnot really a PDF", "PUC.pdf")
-        self.assertEqual(scanned.code, "PUC")
-        self.assertFalse(scanned.confirmed)
-
-    def test_catalog_workbook_read_without_ai(self):
-        report = classify_xlsx(workbook_bytes(catalog=True), "CATALOGO.xlsx")
-        self.assertTrue(report.confirmed)
-        self.assertEqual(report.code, "CATALOGO")
-        report = classify_xlsx(workbook_bytes(catalog=True), "PREFINIQUITO.xlsx")
-        self.assertTrue(report.confirmed)
-
-    def test_non_catalog_workbook_not_confirmed(self):
-        report = classify_xlsx(workbook_bytes(catalog=False), "CATALOGO.xlsx")
-        self.assertFalse(report.confirmed)
-        self.assertEqual(report.status, "Por verificar")
+    def test_mime_mismatch_does_not_assign_code(self):
+        self.assertIsNone(code_from_filename("PUC.pdf", XLSX_MIME))
+        self.assertIsNone(code_from_filename("CATALOGO.xlsx", PDF_MIME))
+        self.assertIsNone(code_from_filename("PUC.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
 
 
 if __name__ == "__main__":
