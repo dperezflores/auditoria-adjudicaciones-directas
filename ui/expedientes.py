@@ -236,8 +236,7 @@ def _analyze(
 def render_expedientes(authenticated: bool) -> None:
     st.title("Expedientes de obra")
     st.caption(
-        "Explorador conectado a Google Drive · Análisis documentales "
-        "con Gemini bajo demanda"
+        "Explorador conectado a Google Drive · Etapa 1: clasificación documental sin IA"
     )
     if not authenticated:
         st.error("Se requiere iniciar sesión con una cuenta autorizada.")
