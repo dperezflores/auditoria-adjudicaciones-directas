@@ -14,7 +14,9 @@ from services.sheets_service import (
     storage_configured,
     sync_to_sheets,
 )
-from services.extraction_store import ExtractionStateError, extract_or_reuse
+from services.extraction_store import (
+    ExtractionStateError, extract_or_reuse, recover_saved_fields,
+)
 from services.gemini_service import DEFAULT_MODEL
 from services.gemini_diagnostics import inspect_model
 
@@ -226,6 +228,42 @@ def render_drive_explorer(authenticated: bool) -> None:
         "a Gemini, que podría generar consumo o cargos.",
         key="gemini_approval",
     )
+    # Esta operación SOLO lee Drive y Sheets; no hace solicitudes a IA.
+    # Es útil si Gemini generó el resultado pero falló la confirmación del
+    # guardado: nunca volver a cobrar por una extracción ya disponible.
+    if st.button(
+        "Recuperar datos guardados (sin usar Gemini)",
+        key="gemini_recover_saved",
+        disabled=not (is_demo_document and storage_ready),
+    ):
+        try:
+            with st.spinner("Recuperando datos existentes de Google Sheets..."):
+                drive_client = create_drive_client(st.secrets["gcp_service_account"])
+                pdf_bytes = download_verified_pdf(drive_client, document, work.id)
+                sheets_client = create_sheets_client(st.secrets["gcp_service_account"])
+                recovered = recover_saved_fields(
+                    sheets_client, st.secrets["storage"]["spreadsheet_id"],
+                    pdf_bytes, document, work.id, model=model,
+                )
+            if recovered is None:
+                st.info(
+                    "No se encontraron campos recuperables para este contenido "
+                    "y esta versión de extracción. No se solicitó Gemini."
+                )
+            else:
+                st.session_state.extraction_display = {
+                    "document_id": document.id,
+                    "md5": document.md5_checksum,
+                    "result": recovered,
+                }
+        except ExtractionStateError as exc:
+            st.error(str(exc))
+        except Exception:
+            st.error(
+                "No fue posible consultar los datos almacenados. "
+                "No se realizó ninguna llamada a Gemini."
+            )
+
     retry = st.checkbox(
         "Autorizar reintento explícito si existe una solicitud incompleta "
         "(podría generar un cargo adicional).",
@@ -267,7 +305,13 @@ def render_drive_explorer(authenticated: bool) -> None:
     display = st.session_state.get("extraction_display")
     if display and display["document_id"] == document.id and display["md5"] == document.md5_checksum:
         outcome = display["result"]
-        if outcome.cached:
+        if outcome.recovered_partial:
+            st.warning(
+                "Recuperación parcial desde DatosContrato: estos valores ya "
+                "estaban guardados. No se llamó a Gemini. Las páginas y "
+                "evidencias no se conservaron y requieren cotejo manual."
+            )
+        elif outcome.cached:
             st.success("Resultado recuperado de Google Sheets: sin una nueva llamada a Gemini.")
         else:
             st.success("Resultado de Gemini guardado en Google Sheets.")
