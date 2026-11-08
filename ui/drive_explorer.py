@@ -26,7 +26,7 @@ def _local_writer_lock() -> threading.Lock:
 
 def render_drive_explorer(authenticated: bool) -> None:
     st.subheader("Google Drive · Explorador piloto")
-    st.caption("Inventario de carpetas y metadatos PDF. Sin descargar archivos ni usar IA.")
+    st.caption("La actualización solo consulta metadatos. Descargar y analizar PDF exige confirmación explícita.")
 
     if not authenticated:
         st.warning("El explorador real requiere autenticación de Google activa.")
