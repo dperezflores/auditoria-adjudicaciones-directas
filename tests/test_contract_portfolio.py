@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 from decimal import Decimal
 
 from services.contract_v2 import CONTRACT_V2_FIELDS, parse_contract_v2
@@ -151,6 +152,40 @@ class PortfolioTests(unittest.TestCase):
         self.assertIsNone(amount)
         self.assertEqual(missing, 1)
         self.assertIn("Sin importes", explanation)
+
+    def test_sum_two_real_contract_amount_formats(self):
+        first_text = "$2,350,150.88"
+        second_text = (
+            "$2,231,632.00 (DOS MILLONES DOSCIENTOS TREINTA Y UN MIL "
+            "SEISCIENTOS TREINTA Y DOS PESOS 00/100 M.N.)"
+        )
+        self.assertEqual(parse_amount(first_text), Decimal("2350150.88"))
+        self.assertEqual(parse_amount(second_text), Decimal("2231632.00"))
+        source = prepare_contract_portfolio(_contract_v2_fixture()).records[0]
+        first = replace(
+            source,
+            values={**source.values, "monto_con_iva": first_text},
+            amount=parse_amount(first_text),
+            currency=currency_group(first_text),
+        )
+        second = replace(
+            source,
+            documento_id="other-real-contract",
+            values={**source.values, "monto_con_iva": second_text},
+            amount=parse_amount(second_text),
+            currency=currency_group(second_text),
+        )
+        total, note, excluded = amount_summary((first, second))
+        self.assertEqual(total, Decimal("4581782.88"))
+        self.assertEqual(excluded, 0)
+        self.assertIn("provisional", note.lower())
+
+    def test_multiple_distinct_amounts_do_not_become_one(self):
+        self.assertIsNone(parse_amount("$10,000.00 y $20,000.00"))
+        self.assertIsNone(
+            parse_amount("$2,231,632.00 y $500.00 (QUINIENTOS PESOS 00/100 M.N.)")
+        )
+        self.assertIsNone(parse_amount("Monto no identificado"))
 
     def test_money_parsing_mexican_and_other_format(self):
         self.assertEqual(parse_amount("$2,350,150.88"), Decimal("2350150.88"))
