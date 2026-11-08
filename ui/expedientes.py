@@ -16,7 +16,11 @@ from services.analysis_catalog import (
 )
 from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
-from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
+from services.contract_v2 import (
+    CONTRACT_SCHEMA_V2, ContractExtractionV2, FIELD_LABELS_V2,
+    classify_cited_regime,
+)
+from services.extraction_store_v2 import extract_or_reuse_v2
 from services.puc_schema import PUC_LABELS, PucExtractionV1
 from services.puc_store import extract_or_reuse_puc
 from services.dictamen_schema import DICTAMEN_LABELS, DictamenAdV1
@@ -43,8 +47,9 @@ from services.writer_lock import get_writer_lock
 
 
 MAX_BATCH = 10
-# Solo estos extractores especializados están autorizados actualmente.
+# Extractores especializados autorizados. El contrato reutiliza su esquema v2.
 ENABLED_EXTRACTORS = {
+    "CONTRATO": CONTRACT_SCHEMA_V2,
     "PUC": "puc-v1",
     "DICTAMEN_AD": "dictamen-ad-v1",
     "NOTIFICACION_AD": "notificacion-ad-v1",
@@ -464,7 +469,13 @@ def _analyze(
                 # Despacho explícito por código de archivo: nunca reutilizar
                 # el prompt del contrato para PUC o DICTAMEN_AD.
                 code = code_from_filename(doc.name, doc.mime_type)
-                if code == "PUC":
+                if code == "CONTRATO":
+                    result = extract_or_reuse_v2(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        model=model,
+                    )
+                elif code == "PUC":
                     result = extract_or_reuse_puc(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
                         pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
@@ -718,7 +729,7 @@ def render_expedientes(authenticated: bool) -> None:
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
-        "Extractores disponibles: **PUC-v1**, **DICTAMEN_AD-v1**, "
+        "Extractores disponibles: **CONTRATO-v2 (16 campos)**, **PUC-v1**, **DICTAMEN_AD-v1**, "
         "**NOTIFICACION_AD-v1** y **ORDEN_AD-v1**. "
         "La extracción comienza solo al pulsar Analizar; otros documentos "
         "no se enviarán a Gemini hasta habilitar su esquema especializado."
@@ -781,7 +792,7 @@ def render_expedientes(authenticated: bool) -> None:
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
-    # Solo cuatro tipos con extractor propio llegan a Gemini.
+    # Solo los tipos con extractor propio llegan a Gemini.
     eligible = [
         d for d in chosen
         if code_from_filename(d.name, d.mime_type) in ENABLED_EXTRACTORS
@@ -814,7 +825,9 @@ def render_expedientes(authenticated: bool) -> None:
             and e["estado"] in ("EN_PROCESO", "REQUIERE_REVISION")
             for e in tables["Extracciones"]
         )
-        if pending_attempt or states[doc.id].label in ("Parcial", "Revisar error"):
+        # Bloquear solo intentos de este esquema; las versiones anteriores
+        # pueden actualizarse mediante una nueva solicitud explícita.
+        if pending_attempt:
             blocked += 1
             continue
         saved = extractions.get(row["resultado_id"])
@@ -847,7 +860,8 @@ def render_expedientes(authenticated: bool) -> None:
     model = gemini.get("model") or DEFAULT_MODEL
     st.caption(
         f"Modelo Gemini: {model} · "
-        "Extractores: PUC-v1, DICTAMEN_AD-v1, NOTIFICACION_AD-v1 y ORDEN_AD-v1"
+        "Extractores: CONTRATO-v2, PUC-v1, DICTAMEN_AD-v1, "
+        "NOTIFICACION_AD-v1 y ORDEN_AD-v1"
     )
     disabled = not batch or not gemini.get("api_key")
     if st.button(
