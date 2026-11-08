@@ -3,12 +3,12 @@
 Piloto para la revisión documental y pruebas de auditoría de adjudicación directa de obra pública en Guanajuato.
 
 ## Estado actual
-**Etapa 3: extracción especializada de PUC y DICTAMEN_AD bajo demanda.**
+**Etapa 4: extracción especializada de PUC, DICTAMEN_AD y NOTIFICACION_AD.**
 Google Drive y Google Sheets están conectados, la clasificación documental
 se realiza por nombre y se guarda en la hoja maestra. El extractor
 `PUC-v1` obtiene 18 campos literales y la lista de especialidades,
 con página y evidencia, en `DatosPUC` y `Extracciones`.
-PUC y DICTAMEN_AD tienen extractores independientes; los demás tipos permanecen pendientes.
+PUC, DICTAMEN_AD y NOTIFICACION_AD tienen extractores independientes; los demás permanecen pendientes.
 
 ## Objetivo
 1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
@@ -111,7 +111,7 @@ como `POR_IDENTIFICAR`.
 
 El tipo asignado se guarda en `Documentos.tipo_documental` durante
 **Actualizar Google Drive**; la pantalla de verificación por contenido fue
-retirada. La IA solo se ejecuta bajo demanda para PUC y DICTAMEN_AD; el resto
+retirada. La IA solo se ejecuta bajo demanda para PUC, DICTAMEN_AD y NOTIFICACION_AD; el resto
 permanece sin extractor especializado.
 
 [Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
@@ -143,3 +143,18 @@ La eliminación requiere escribir `ELIMINAR`, retira su caché y fichas
 asociadas, lo deja **Pendiente** y registra el evento en **Historial**.
 Una nueva extracción es voluntaria y puede generar consumo de Gemini.
 [Procedimiento y medidas de seguridad](docs/ELIMINAR_ANALISIS.md).
+
+
+## Etapa 4 — NOTIFICACION_AD-v1
+
+El extractor `NOTIFICACION_AD-v1` conserva 21 campos literales,
+separa la fecha de emisión de la fecha efectiva de recepción, distingue
+el registro PUC del contratista del correspondiente a supervisión externa,
+y extrae las obligaciones, los plazos textuales, el evento que inicia su
+cómputo, las personas designadas y las referencias jurídicas.
+
+Los resultados quedan en `DatosNotificacionAD` y `Extracciones`,
+con evidencia y caché por archivo/modelo/versión. El botón para eliminar
+el análisis también cubre este tipo documental.
+No se calculan todavía fechas límite ni se aplican pruebas de auditoría.
+[Guía de extracción y validación](docs/ETAPA_04_EXTRACCION_NOTIFICACION_AD.md).
