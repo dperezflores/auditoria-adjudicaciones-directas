@@ -422,6 +422,15 @@ def prepare_contract_portfolio(
             raise PortfolioError(
                 "Los datos del contrato v2 no coinciden con su extracción original."
             )
+        # Un PDF de PUC, dictamen o anexo también puede pasar por el
+        # extractor fijo de 16 campos. Solo debe incorporarse al dashboard
+        # cuando el contenido respalda que hay un contrato identificado.
+        # Un RFC aislado o un nombre de empresa no basta.
+        if not (
+            raw["numero_contrato"]
+            or (raw["obra_servicio"] and raw["monto_contrato"])
+        ):
+            continue
         legacy_view = {
             "numero_contrato": raw["numero_contrato"],
             "nombre_obra": raw["obra_servicio"],
