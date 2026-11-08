@@ -8,6 +8,8 @@ import json
 import unittest
 from decimal import Decimal
 
+from services.contract_v2 import CONTRACT_V2_FIELDS, parse_contract_v2
+
 from services.contract_portfolio import (
     DATA_FIELDS, HEADERS, PortfolioError, amount_summary, currency_group,
     filter_contracts, money_text, parse_amount, prepare_contract_portfolio,
@@ -269,6 +271,119 @@ class GeneralContractPortfolioTests(unittest.TestCase):
         general = next(r for r in portfolio.records if r.source_schema == "documento-schema-v1")
         self.assertEqual(general.values["monto_con_iva"], "")
         self.assertIsNone(general.amount)
+
+
+def _contract_v2_fixture():
+    data = dataset()
+    fields = [
+        {"campo": name, "valor": None, "pagina": None, "evidencia": None}
+        for name in CONTRACT_V2_FIELDS
+    ]
+    literal = {
+        "numero_contrato": "A-117/2025",
+        "obra_servicio": "OBRA PP Z1867, REHABILITACIÓN DE CAMINOS.",
+        "tipo_contrato": "A PRECIOS UNITARIOS Y TIEMPO DETERMINADO",
+        "contratista": "CONSTRUCTORA DEL BAJÍO, S.A. DE C.V.",
+        "registro_puc": "GTO-SOPI/PUC-5455-2023",
+        "rfc": "ABC010101AB1",
+        "representante_legal": "ARQ. JOSE LUIS, S.A.",
+        "representante_tecnico": "ING. CÉSAR RAMÍREZ",
+        "modalidad_adjudicacion": "ADJUDICACIÓN DIRECTA",
+        "monto_contrato": "$2,350,150.88",
+        "fecha_inicio_contractual": "02 de Junio de 2025",
+        "fecha_termino_contractual": "26 de Julio de 2025",
+        "fecha_firma_contrato": "05 de Mayo de 2025",
+        "anticipo": "30%",
+        "fuente_financiamiento": "Recursos Municipales",
+        "legislacion_citada": "Ley de Obra Pública y Servicios relacionados con la misma para el Estado y los Municipios de Guanajuato",
+    }
+    for item in fields:
+        if item["campo"] in literal:
+            item.update({
+                "valor": literal[item["campo"]],
+                "pagina": 1,
+                "evidencia": literal[item["campo"]],
+            })
+    result = parse_contract_v2({
+        "campos": fields,
+        "personas": [{
+            "nombre": "ARQ. JOSE LUIS, S.A.",
+            "cargo_o_caracter": "REPRESENTANTE LEGAL",
+            "representacion": "CONSTRUCTORA DEL BAJÍO, S.A. DE C.V.",
+            "pagina": 22,
+            "evidencia": "ARQ. JOSE LUIS, S.A.",
+        }],
+        "observaciones": [],
+    })
+    key = "cacheV2Current"
+    data["Documentos"][1][13] = key
+    data["Extracciones"].append([
+        key, "COMPLETADO", DOCUMENT, WORK, "hash", "gemini-3.5-flash-lite",
+        "contrato-prompt-v4", "contrato-v2", "",
+        "2026-11-08", result.model_dump_json(exclude_none=False),
+        "800", "300", "",
+    ])
+    data["DatosContratoV2"].append([
+        key, WORK, DOCUMENT, *result.flat_values(),
+        json.dumps([p.model_dump(mode="json") for p in result.personas_participantes], ensure_ascii=False),
+        "Estatal (citado; por verificar)", "[]", "2026-11-08",
+    ])
+    return data
+
+
+class ContractPortfolioV2Tests(unittest.TestCase):
+    def test_new_schema_upgrades_same_contract_without_double_count(self):
+        result = prepare_contract_portfolio(_contract_v2_fixture())
+        self.assertEqual(result.works_count, 1)
+        self.assertEqual(len(result.records), 1)
+        record = result.records[0]
+        self.assertEqual(record.source_schema, "contrato-v2")
+        self.assertEqual(record.coverage, "16/16")
+        self.assertEqual(record.values["numero_contrato"], "A-117/2025")
+        self.assertEqual(record.full_values["tipo_contrato"], "A PRECIOS UNITARIOS Y TIEMPO DETERMINADO")
+        self.assertEqual(record.full_values["representante_tecnico"], "ING. CÉSAR RAMÍREZ")
+        self.assertEqual(record.full_values["fuente_financiamiento"], "Recursos Municipales")
+        self.assertEqual(record.participants[0]["pagina"], 22)
+        self.assertEqual(record.normative_scope, "Estatal (citado; por verificar)")
+        self.assertEqual(record.missing_fields, ())
+
+    def test_v2_literal_values_not_rewritten_or_normalized(self):
+        data = _contract_v2_fixture()
+        doc = data["DatosContratoV2"][1]
+        idx = 3 + CONTRACT_V2_FIELDS.index("contratista")
+        original = "  CO.NST, S.A. DE C.V.  "
+        doc[idx] = original
+        source = json.loads(data["Extracciones"][-1][10])
+        source["contratista"]["valor"] = original
+        data["Extracciones"][-1][10] = json.dumps(source, ensure_ascii=False)
+        record = prepare_contract_portfolio(data).records[0]
+        self.assertEqual(record.full_values["contratista"], original)
+
+    def test_v2_mismatch_between_derived_row_and_json_is_detected(self):
+        data = _contract_v2_fixture()
+        idx = 3 + CONTRACT_V2_FIELDS.index("monto_contrato")
+        data["DatosContratoV2"][1][idx] = "$3,000,000.00"
+        with self.assertRaises(PortfolioError):
+            prepare_contract_portfolio(data)
+
+    def test_old_and_new_document_formats_coexist(self):
+        data = _contract_v2_fixture()
+        data["Obras"].append([
+            "oldFolder", "Obra con contrato antiguo", "", "1", "0",
+            "0", "", "SI", "1",
+        ])
+        original = data["Documentos"][1].copy()
+        original[0], original[1], original[13] = "oldDoc", "oldFolder", "oldCache"
+        data["Documentos"].append(original)
+        row = data["DatosContrato"][1].copy()
+        row[0], row[1], row[2] = "oldCache", "oldFolder", "oldDoc"
+        data["DatosContrato"].append(row)
+        prev = data["Extracciones"][1].copy()
+        prev[0], prev[2], prev[3] = "oldCache", "oldDoc", "oldFolder"
+        data["Extracciones"].append(prev)
+        result = prepare_contract_portfolio(data)
+        self.assertEqual(result.works_count, 2)
+        self.assertEqual(len(result.records), 2)
 
 
 class _Request:
