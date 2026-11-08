@@ -1,8 +1,6 @@
 """Explorador protegido de Drive con sincronización persistente bajo demanda."""
 from __future__ import annotations
 
-import threading
-
 import pandas as pd
 import streamlit as st
 
@@ -19,12 +17,7 @@ from services.extraction_store import (
 )
 from services.gemini_service import DEFAULT_MODEL
 from services.gemini_diagnostics import inspect_model
-
-
-@st.cache_resource
-def _local_writer_lock() -> threading.Lock:
-    """Serializa escrituras entre sesiones dentro de un SOLO proceso Streamlit."""
-    return threading.Lock()
+from services.writer_lock import get_writer_lock
 
 
 def render_drive_explorer(authenticated: bool) -> None:
@@ -61,7 +54,7 @@ def render_drive_explorer(authenticated: bool) -> None:
             # por primera vez consulta Drive sin alterar la hoja maestra.
             if refresh and storage_ready:
                 try:
-                    with _local_writer_lock():
+                    with get_writer_lock():
                         sheets = create_sheets_client(st.secrets["gcp_service_account"])
                         result = sync_to_sheets(
                             sheets, st.secrets["storage"]["spreadsheet_id"], inventory
@@ -279,7 +272,7 @@ def render_drive_explorer(authenticated: bool) -> None:
         st.session_state.pop("extraction_display", None)
         try:
             with st.spinner("Comprobando PDF, caché y extracción..."):
-                with _local_writer_lock():
+                with get_writer_lock():
                     client = create_drive_client(st.secrets["gcp_service_account"])
                     pdf_bytes = download_verified_pdf(client, document, work.id)
                     sheets_client = create_sheets_client(st.secrets["gcp_service_account"])
