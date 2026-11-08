@@ -24,20 +24,22 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertIn("Evidencias del PDF", source)
         self.assertIn("FIELD_LABELS_V2", source)
 
-    def test_fixed_16_field_extraction_and_pdf_link_placement(self):
+    def test_puc_only_extraction_and_pdf_link_placement(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "ui" / "expedientes.py").read_text(encoding="utf-8")
         self.assertNotIn('"Plantilla de extracción"', source)
         self.assertNotIn("ex_analysis_choice", source)
         self.assertNotIn("analysis_choice", source)
         self.assertNotIn("analyze_document(", source)
-        self.assertIn("extract_or_reuse_v2(", source)
+        self.assertIn("extract_or_reuse_puc(", source)
+        self.assertIn('code_from_filename(doc.name, doc.mime_type) != "PUC"', source)
         self.assertIn('key="ex_analyze"', source)
         self.assertIn('"Tipo documental": guess_from_name(d.name, d.mime_type).label', source)
         self.assertNotIn("render_classification(inventory)", source)
         self.assertNotIn("Verificar tipo por contenido (sin IA)", source)
-        self.assertIn("disabled = True", source)
-        self.assertIn("is_current_v2(doc)", source)
+        self.assertIn('disabled = not batch or not gemini.get("api_key")', source)
+        self.assertIn('f"Analizar {len(batch)} PUC con IA"', source)
+        self.assertIn('saved["version_esquema"] == "puc-v1"', source)
         self.assertLess(
             source.index('_summarize_saved(preview, st.session_state["ex_status_tables"], current_state)'),
             source.index('"Ver PDF en Drive"'),
