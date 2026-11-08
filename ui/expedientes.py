@@ -399,7 +399,10 @@ def render_expedientes(authenticated: bool) -> None:
             f"Esta ejecución analizará los primeros {MAX_BATCH}; "
             "podrás repetir para continuar con los siguientes."
         )
-    skips = len(chosen) - len(to_process)
+    skips = sum(
+        states[d.id].label not in ("Pendiente", "Sin registrar", "Desactualizado")
+        for d in chosen
+    )
     if skips:
         st.info(
             f"{skips} archivo(s) ya analizado(s), parcial(es) o con incidencia "
