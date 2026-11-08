@@ -87,6 +87,8 @@ class CatalogTests(unittest.TestCase):
 
     def test_heuristic_contrato_and_puc(self):
         self.assertEqual(suggest_kind("CONTRATO-001.pdf"),"contrato")
+        self.assertEqual(suggest_kind("CNT_DIR_CNT.pdf"), "contrato")
+        self.assertEqual(suggest_kind("CONTR_DIR.pdf"), "contrato")
         self.assertEqual(suggest_kind("PUC_Contratista.pdf"),"documental")
         self.assertEqual(suggest_kind("Convenio_contrato.pdf"),"documental")
 
