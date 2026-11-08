@@ -214,6 +214,7 @@ class ExtractionStoreTests(unittest.TestCase):
         self.assertEqual(self.calls, 1)
         # La siguiente carga usa el resultado completo ya persistido;
         # no debe generar otra petición.
+        self.client.store.simulate_confirmation_failure = False
         cached = self.run_analysis()
         self.assertTrue(cached.cached)
         self.assertEqual(self.calls, 1)
