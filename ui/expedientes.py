@@ -14,10 +14,12 @@ import streamlit as st
 from services.analysis_catalog import (
     FileStatus, file_states, folder_states, load_status_tables,
 )
-from services.document_classifier import XLSX_MIME, guess_from_name
+from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
 from services.extraction_store_v2 import extract_or_reuse_v2
+from services.puc_schema import PUC_LABELS, PucExtractionV1
+from services.puc_store import extract_or_reuse_puc
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
@@ -129,6 +131,44 @@ def _summarize_saved(
                 )
             except Exception:
                 st.warning("El registro contractual v2 no pudo interpretarse.")
+        elif old["version_esquema"] == "puc-v1":
+            try:
+                report = PucExtractionV1.model_validate_json(old["resultado_json"])
+                st.markdown("#### Datos extraídos del PUC")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Campo": label,
+                        "Texto literal": getattr(report, field).valor or "No localizado",
+                        "Página": getattr(report, field).pagina,
+                        "Evidencia": getattr(report, field).evidencia or "Sin evidencia",
+                    }
+                    for field, label in PUC_LABELS
+                ]), hide_index=True, use_container_width=True)
+                st.markdown("#### Especialidades registradas")
+                if report.especialidades:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Categoría": item.categoria or "—",
+                            "Actividad": item.actividad or "—",
+                            "Tipo marcado": item.tipo_marcado or "—",
+                            "Aportada por": item.aportada_por or "—",
+                            "Página": item.pagina,
+                            "Evidencia": item.evidencia or "Sin evidencia",
+                        }
+                        for item in report.especialidades
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se identificaron especialidades en la extracción.")
+                if report.observaciones:
+                    with st.expander("Advertencias documentales de la extracción"):
+                        for observation in report.observaciones:
+                            st.write("• " + observation)
+                st.caption(
+                    "Los valores son transcripciones de Gemini, no resultados "
+                    "de las pruebas de capital, especialidad o vigencia."
+                )
+            except Exception:
+                st.warning("La extracción PUC guardada no pudo interpretarse.")
         elif old["version_esquema"] == "contrato-v1":
             try:
                 parsed = ExtraccionContrato.model_validate_json(old["resultado_json"])
@@ -185,7 +225,12 @@ def _analyze(
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
-                result = extract_or_reuse_v2(
+                # En esta etapa no existe ruta Gemini para otros tipos.
+                if code_from_filename(doc.name, doc.mime_type) != "PUC":
+                    raise ExtractionStateError(
+                        "Este documento no es PUC.pdf; extractor no disponible."
+                    )
+                result = extract_or_reuse_puc(
                     sheets, st.secrets["storage"]["spreadsheet_id"],
                     pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
                     model=model,
@@ -235,7 +280,7 @@ def _analyze(
 def render_expedientes(authenticated: bool) -> None:
     st.title("Expedientes de obra")
     st.caption(
-        "Explorador conectado a Google Drive · Etapa 1: clasificación documental sin IA"
+        "Explorador conectado a Google Drive · Etapa 2: extracción PUC-v1"
     )
     if not authenticated:
         st.error("Se requiere iniciar sesión con una cuenta autorizada.")
@@ -344,9 +389,9 @@ def render_expedientes(authenticated: bool) -> None:
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
-        "Etapa 1: los análisis nuevos están pausados mientras incorporamos "
-        "los extractores propios de cada documento. Así evitamos que el PUC "
-        "o el dictamen vuelvan a procesarse con los 16 campos del contrato."
+        "Etapa 2: **PUC-v1 disponible**. Por ahora solo se analizarán archivos "
+        "PUC.pdf mediante Gemini. Los demás tipos conservan el código registrado, "
+        "pero todavía no tienen extractor habilitado."
     )
     ids = [work.id for work in inventory.works]
     label_by_id = {work.id: work.name for work in inventory.works}
@@ -394,7 +439,11 @@ def render_expedientes(authenticated: bool) -> None:
                 "Tamaño (MB)": round(d.size_bytes / 1_000_000, 2) if d.size_bytes else None,
                 "Estado actual": states[d.id].label,
                 "Tipo documental": guess_from_name(d.name, d.mime_type).label,
-                "Extractor": "Pendiente de activación por tipo",
+                "Extractor": (
+                    "PUC-v1 disponible"
+                    if code_from_filename(d.name, d.mime_type) == "PUC"
+                    else "No habilitado"
+                ),
                 "Compatibilidad": (
                     "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
                     else "Sin tamaño" if not d.size_bytes
@@ -404,108 +453,71 @@ def render_expedientes(authenticated: bool) -> None:
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
-    # La aplicación reconoce trabajos anteriores y evita volver a enviarlos.
-    # Una ficha "Parcial"/"Revisar error" tampoco se reintenta sin revisión.
-    too_large = [doc for doc in chosen if doc.size_bytes > MAX_PDF_BYTES]
-    unknown_size = [doc for doc in chosen if doc.size_bytes <= 0]
-    if too_large:
+    # Selección segura: solo PUC.pdf puede llegar a la función de extracción.
+    eligible = [
+        d for d in chosen if code_from_filename(d.name, d.mime_type) == "PUC"
+    ]
+    ignored = [d for d in chosen if d.id not in {x.id for x in eligible}]
+    if ignored:
         st.warning(
-            f"{len(too_large)} PDF excede(n) el límite de 50 MB de Gemini "
-            "y no se enviarán a la API. Reduce su tamaño o divide el documento."
-        )
-    if unknown_size:
-        st.warning(
-            f"{len(unknown_size)} PDF no informa(n) tamaño en Drive. "
-            "Actualiza el inventario antes de analizarlos."
-        )
-    # La extracción v2 es la única modalidad desde esta interfaz.
-    # Un PDF con v1 o ficha general se puede ampliar manualmente una vez,
-    # pero un v2 completo se reutiliza y uno incierto nunca se reintenta.
-    registered = {r["documento_id"]: r for r in tables["Documentos"]}
-    extractions = {r["cache_key"]: r for r in tables["Extracciones"]}
-    v2_attempts = {}
-    for row in tables["Extracciones"]:
-        if row["version_esquema"] == "contrato-v2":
-            v2_attempts.setdefault(row["documento_id"], []).append(row)
-
-    def is_current_v2(doc: DocumentRecord) -> bool:
-        item = registered.get(doc.id)
-        if not item or item["md5_checksum"] != doc.md5_checksum:
-            return False
-        result = extractions.get(item["resultado_id"])
-        return bool(
-            result
-            and result["version_esquema"] == "contrato-v2"
-            and result["estado"] == "COMPLETADO"
-            and result["resultado_json"]
-            and result["documento_id"] == doc.id
-            and result["obra_id"] == obra.id
+            f"{len(ignored)} documento(s) carecen de extractor habilitado. "
+            "No se enviarán a Gemini."
         )
 
-    blocked_v2 = {
-        doc.id for doc in chosen
-        if any(
-            row["estado"] in ("EN_PROCESO", "REQUIERE_REVISION")
-            for row in v2_attempts.get(doc.id, [])
-        )
-    }
+    registered = {row["documento_id"]: row for row in tables["Documentos"]}
+    extractions = {row["cache_key"]: row for row in tables["Extracciones"]}
     to_process = []
-    old_version_ready = []
-    for doc in chosen:
+    reused = 0
+    blocked = 0
+    for doc in eligible:
         if not (0 < doc.size_bytes <= MAX_PDF_BYTES):
             continue
-        current = states[doc.id].label
-        if (
-            doc.id in blocked_v2 or is_current_v2(doc)
-            or current in ("Sin registrar", "Parcial", "Revisar error")
-        ):
+        row = registered.get(doc.id)
+        if not row or row["obra_id"] != obra.id or row["activo"] != "SI":
             continue
-        if current in ("Pendiente", "Analizado", "Desactualizado"):
+        if row["md5_checksum"] != doc.md5_checksum or row["tipo_documental"] != "PUC":
+            continue
+        pending_attempt = any(
+            e["documento_id"] == doc.id and e["obra_id"] == obra.id
+            and e["version_esquema"] == "puc-v1"
+            and e["estado"] in ("EN_PROCESO", "REQUIERE_REVISION")
+            for e in tables["Extracciones"]
+        )
+        if pending_attempt or states[doc.id].label in ("Parcial", "Revisar error"):
+            blocked += 1
+            continue
+        saved = extractions.get(row["resultado_id"])
+        if (
+            saved and saved["version_esquema"] == "puc-v1"
+            and saved["estado"] == "COMPLETADO" and saved["resultado_json"]
+            and saved["documento_id"] == doc.id and saved["obra_id"] == obra.id
+        ):
+            reused += 1
+            continue
+        if states[doc.id].label not in ("Sin registrar", "Desactualizado"):
             to_process.append(doc)
-            if current == "Analizado":
-                old_version_ready.append(doc)
-
-    if blocked_v2:
+    batch = to_process[:MAX_BATCH]
+    if blocked:
         st.warning(
-            "Existe una solicitud de contrato v2 sin confirmar para "
-            f"{len(blocked_v2)} archivo(s). No se repetirá automáticamente."
+            f"{blocked} PUC tienen intentos incompletos o inconsistencias. "
+            "No habrá reintentos automáticos."
         )
-    if old_version_ready:
-        st.info(
-            f"{len(old_version_ready)} documento(s) tienen una extracción anterior. "
-            "Al pulsar Analizar se obtendrán los 16 campos con la nueva versión "
-            "y se conservará el resultado histórico. Esto puede generar consumo "
-            "solo si no existe ya una extracción v2 reutilizable."
+    if reused:
+        st.success(
+            f"{reused} PUC con extracción v1 guardada. "
+            "Se pueden consultar sin volver a consumir Gemini."
         )
-    batch = to_process[:MAX_BATCH] if mode == "Carpeta completa" else to_process
-    if mode == "Carpeta completa" and len(to_process) > MAX_BATCH:
-        st.info(
-            f"La carpeta contiene {len(to_process)} PDF por procesar. "
-            f"Esta ejecución analizará los primeros {MAX_BATCH}; "
-            "podrás repetir para continuar con los siguientes."
+    if len(to_process) > MAX_BATCH:
+        st.caption(
+            f"Se analizarán como máximo {MAX_BATCH} PUC por ejecución."
         )
-    skips = sum(
-        0 < d.size_bytes <= MAX_PDF_BYTES and d.id not in {x.id for x in to_process}
-        for d in chosen
-    )
-    if skips:
-        st.info(
-            f"{skips} archivo(s) ya analizado(s), parcial(es) o con incidencia "
-            "serán omitidos para evitar repetir solicitudes y cargos."
-        )
-    if any(states[d.id].label == "Sin registrar" for d in to_process):
-        st.warning("Hay documentos sin registrar: primero presiona Actualizar Google Drive.")
 
     gemini = st.secrets.get("gemini", {})
-    api_key = gemini.get("api_key", "")
     model = gemini.get("model") or DEFAULT_MODEL
-    st.caption(f"Modelo disponible para etapas posteriores: {model}")
-    # Por seguridad, deshabilitar el extractor único de contratos mientras
-    # se implementan los esquemas PUC/DICTAMEN/NOTIFICACION específicos.
-    # No se envía ningún PDF a Gemini durante esta etapa.
-    disabled = True
+    st.caption(f"Modelo Gemini: {model} · Extractor: PUC-v1")
+    disabled = not batch or not gemini.get("api_key")
     if st.button(
-        f"Analizar {len(batch)} documento(s) con IA",
+        f"Analizar {len(batch)} PUC con IA",
         type="primary", disabled=disabled, key="ex_analyze",
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
