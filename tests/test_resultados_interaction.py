@@ -12,9 +12,11 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertIn('selection_mode="single-row"', source)
         self.assertIn('on_select="rerun"', source)
         self.assertIn("selected_rows = event.selection.rows", source)
-        self.assertIn("_render_details(filtered[chosen_index])", source)
+        self.assertIn("chosen_contract = filtered[chosen_index]", source)
+        self.assertIn("_render_details(chosen_contract)", source)
+        self.assertIn("render_document_crosscheck(chosen_contract, portfolio.supporting_documents)", source)
         self.assertLess(
-            source.index("_render_details(filtered[chosen_index])"),
+            source.index("_render_details(chosen_contract)"),
             source.index("_render_aggregate_visuals(filtered)"),
         )
         self.assertIn("Personas participantes", source)
