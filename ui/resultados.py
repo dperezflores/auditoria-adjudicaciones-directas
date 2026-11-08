@@ -55,7 +55,7 @@ def _filtered_download(records: tuple[ContractRecord, ...]) -> bytes:
         "obra_id": r.obra_id,
         "documento_id": r.documento_id,
         **{field: r.values[field] for field in DATA_FIELDS},
-        **{key: (r.full_values or {}).get(key, "") for key, _ in FIELD_LABELS_V2},
+        **{f"literal_{key}": (r.full_values or {}).get(key, "") for key, _ in FIELD_LABELS_V2},
         "participantes_json": json.dumps(
             list(r.participants), ensure_ascii=False
         ),
@@ -306,7 +306,7 @@ def render_results() -> None:
     col4.metric("Campos sin dato", sum(len(r.missing_fields) for r in filtered))
     st.caption(
         f"Indicadores correspondientes a los filtros actuales. {amount_note} "
-        "Los importes no constituyen montos auditados."
+        "Los importes no constituyen montos auditados ni están homologados por IVA."
     )
 
     st.markdown("#### Listado de obras y contratos")
