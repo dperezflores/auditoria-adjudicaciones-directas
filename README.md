@@ -133,3 +133,13 @@ Se almacenan en `DatosDictamenAD` y `Extracciones`, sin alterar
 `DatosPUC`. Las afirmaciones del dictamen no se consideran acreditadas:
 **todavía no se ejecutan pruebas de cumplimiento ni cruces legales**.
 [Guía de prueba](docs/ETAPA_03_EXTRACCION_DICTAMEN_AD.md).
+
+
+## Eliminar análisis y volver a analizar un archivo
+
+En **Expedientes → Consultar análisis guardado** puede eliminarse la
+extracción de un PDF específico sin borrar el archivo de Google Drive.
+La eliminación requiere escribir `ELIMINAR`, retira su caché y fichas
+asociadas, lo deja **Pendiente** y registra el evento en **Historial**.
+Una nueva extracción es voluntaria y puede generar consumo de Gemini.
+[Procedimiento y medidas de seguridad](docs/ELIMINAR_ANALISIS.md).
