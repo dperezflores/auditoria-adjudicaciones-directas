@@ -22,13 +22,21 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertIn("Evidencias del PDF", source)
         self.assertIn("FIELD_LABELS_V2", source)
 
-    def test_extractor_can_be_selected_manually_for_old_contracts(self):
+    def test_fixed_16_field_extraction_and_pdf_link_placement(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "ui" / "expedientes.py").read_text(encoding="utf-8")
-        self.assertIn("Contrato completo (16 campos)", source)
+        self.assertNotIn('"Plantilla de extracción"', source)
+        self.assertNotIn("ex_analysis_choice", source)
+        self.assertNotIn("analysis_choice", source)
+        self.assertNotIn("analyze_document(", source)
         self.assertIn("extract_or_reuse_v2(", source)
-        self.assertIn("st.session_state[", source)
         self.assertIn('key="ex_analyze"', source)
+        self.assertIn('"Análisis propuesto": "Extracción contractual · 16 campos"', source)
+        self.assertIn("is_current_v2(doc)", source)
+        self.assertLess(
+            source.index('_summarize_saved(preview, st.session_state["ex_status_tables"], current_state)'),
+            source.index('"Ver PDF en Drive"'),
+        )
 
 
 if __name__ == "__main__":
