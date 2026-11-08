@@ -5,7 +5,6 @@ El análisis solamente inicia con confirmación y pulsación del usuario.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import datetime, timezone
 
@@ -370,25 +369,8 @@ def render_expedientes(authenticated: bool) -> None:
     api_key = gemini.get("api_key", "")
     model = gemini.get("model") or DEFAULT_MODEL
     st.caption(f"Modelo configurado: {model}")
-    st.warning(
-        "Antes de usar expedientes reales verifica que exista autorización "
-        "institucional para enviarlos al proveedor de IA, y que las condiciones "
-        "de tratamiento de datos de tu proyecto sean apropiadas."
-    )
-    scope_token = hashlib.sha256(
-        (obra.id + "|" + mode + "|" + "|".join(sorted(selected))).encode("utf-8")
-    ).hexdigest()[:14]
-    approval_key = f"ex_approved_{scope_token}"
-    if st.session_state.get("ex_reset_approval") == approval_key:
-        st.session_state.pop(approval_key, None)
-        st.session_state.pop("ex_reset_approval", None)
-    consent = st.checkbox(
-        "Confirmo que tengo autorización para enviar estos PDF a Gemini "
-        "y acepto que el procesamiento puede generar consumo.",
-        key=approval_key,
-    )
     disabled = (
-        not consent or not api_key or not batch
+        not api_key or not batch
         or (mode != "Carpeta completa" and len(chosen) > MAX_BATCH)
         or any(states[d.id].label == "Sin registrar" for d in to_process)
     )
@@ -397,7 +379,6 @@ def render_expedientes(authenticated: bool) -> None:
         type="primary", disabled=disabled, key="ex_analyze",
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
-        st.session_state["ex_reset_approval"] = approval_key
         st.rerun()
 
     if st.session_state.get("ex_last_run"):
