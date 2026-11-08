@@ -51,12 +51,12 @@ def _key(raw: bytes) -> CacheKey:
     )
 
 
-def ensure_catalog_table(sheets: Any, sheet_id: str) -> None:
+def ensure_catalog_table(sheets: Any, sheet_id: str, *, min_rows: int = 1000) -> None:
     """Crear la pestaña dedicada al importarse el primer Excel (no al navegar)."""
     api = sheets.spreadsheets()
     meta = api.get(
         spreadsheetId=sheet_id,
-        fields="sheets(properties(sheetId,title,gridProperties(columnCount)))",
+        fields="sheets(properties(sheetId,title,gridProperties(columnCount,rowCount)))",
     ).execute()
     found = [
         (obj.get("properties") or {})
@@ -68,7 +68,7 @@ def ensure_catalog_table(sheets: Any, sheet_id: str) -> None:
     if not found:
         response = api.batchUpdate(spreadsheetId=sheet_id, body={"requests": [
             {"addSheet": {"properties": {"title": TABLE, "gridProperties": {
-                "rowCount": 1000, "columnCount": len(CATALOGO_HEADERS),
+                "rowCount": max(1000, min_rows), "columnCount": len(CATALOGO_HEADERS),
             }}}}
         ]}).execute()
         if not response.get("replies"):
@@ -78,8 +78,20 @@ def ensure_catalog_table(sheets: Any, sheet_id: str) -> None:
             valueInputOption="RAW",
             body={"values": [list(CATALOGO_HEADERS)]},
         ).execute()
-    elif int((found[0].get("gridProperties") or {}).get("columnCount", 0)) < len(CATALOGO_HEADERS):
-        raise ExtractionStateError("DatosCatalogo no tiene las columnas necesarias.")
+    else:
+        props = found[0].get("gridProperties") or {}
+        if int(props.get("columnCount", 0)) < len(CATALOGO_HEADERS):
+            raise ExtractionStateError("DatosCatalogo no tiene las columnas necesarias.")
+        if int(props.get("rowCount", 0)) < min_rows:
+            response = api.batchUpdate(spreadsheetId=sheet_id, body={"requests": [{
+                "updateSheetProperties": {
+                    "properties": {"sheetId": found[0]["sheetId"],
+                                   "gridProperties": {"rowCount": min_rows}},
+                    "fields": "gridProperties.rowCount",
+                }
+            }]}).execute()
+            if not response.get("replies"):
+                raise ExtractionStateError("No se confirmó la ampliación de DatosCatalogo.")
 
 
 def load_catalog_rows(sheets: Any, sheet_id: str) -> list[list[str]]:
@@ -180,8 +192,9 @@ def import_or_reuse_catalogo(
         parsed = parse_catalogo_xlsx(raw)
     except CatalogoFormatError as exc:
         raise ExtractionStateError(str(exc)) from None
-    ensure_catalog_table(sheets, sheet_id)
+    ensure_catalog_table(sheets, sheet_id, min_rows=len(parsed.conceptos) + 2)
     existing = load_catalog_rows(sheets, sheet_id)
+    ensure_catalog_table(sheets, sheet_id, min_rows=len(existing) + len(parsed.conceptos) + 2)
     if any(r[0] == cache.clave for r in existing):
         raise ExtractionStateError(
             "Existen filas de catálogo sin una importación confirmada. Revisar antes de duplicar."
