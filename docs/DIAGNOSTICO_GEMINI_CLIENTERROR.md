@@ -36,3 +36,29 @@ Documentación:
 Se preserva la fila de fallo como rastro auditable. No borrar, editar a mano ni reenviar el PDF repetidamente. Si corresponde iniciar una nueva solicitud después de corregir el código, se registrará con versión nueva y consentimiento explícito.
 
 Nunca compartir `api_key`, `client_secret`, `cookie_secret` ni valores de `gcp_service_account`.
+
+
+## Actualización después del diagnóstico de metadatos
+
+La consulta de metadatos del modelo fue satisfactoria, pero no revela cuál
+fue el código HTTP del primer `ClientError`. Por ello no se puede atribuir
+ese error con certeza a parámetros, cuotas o facturación.
+
+**Cambios publicados:**
+- Se eliminó el parámetro personalizado `temperature=0` en `services/gemini_service.py`.
+- Las respuestas de error de la API registrarán solo el código HTTP y el
+  status estándar, sin el mensaje completo ni secretos.
+- Se versionó la extracción como `contrato-prompt-v2`; esto crea otra
+  clave de caché para una configuración de extracción distinta. El intento
+  antiguo `REQUIERE_REVISION` permanece intacto.
+
+**Próxima prueba:** solo con contrato ficticio, después de una nueva
+confirmación del usuario. Mantener desmarcado **Autorizar reintento
+explícito**. Una nueva solicitud puede causar consumo/cargos.
+
+Si aparece `HTTP_400_FAILED_PRECONDITION`, revisar requisitos de la
+cuenta y facturación en Google AI Studio. Si aparece
+`HTTP_400_INVALID_ARGUMENT`, revisar los campos del esquema y request.
+Si `HTTP_403`, revisar permisos; si `HTTP_429`, límites de uso.
+
+No repetir solicitudes automáticamente.
