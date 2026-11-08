@@ -161,6 +161,12 @@ def _summarize_saved(
                 a.metric("Conceptos contratados", summary["conceptos_originales"])
                 b.metric("Conceptos fuera de catálogo excluidos", summary["excluidos_fuera_catalogo"])
                 c.metric("Importe inicial calculado sin IVA", summary["importe_original_calculado_sin_iva"])
+                if summary.get("claves_repetidas", 0):
+                    st.info(
+                        f"{summary['claves_repetidas']} clave(s) se utilizan en "
+                        f"{summary['renglones_con_clave_repetida']} renglones del catálogo. "
+                        "Se conservaron todos por capítulo, hoja y fila de origen."
+                    )
                 st.caption(summary["nota"])
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 records = [
