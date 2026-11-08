@@ -81,8 +81,8 @@ with st.sidebar:
 if page == "Expedientes":
     render_expedientes(allowed)
 elif page == "Resultados":
-    if not (ready_drive and ready_sheets):
-        st.error("Falta configurar Drive o Google Sheets.")
+    if not ready_sheets:
+        st.error("Falta configurar Google Sheets para consultar los contratos.")
     else:
         render_results()
 else:
