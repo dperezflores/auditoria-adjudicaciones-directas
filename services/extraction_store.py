@@ -17,6 +17,7 @@ from services.contract_schema import ExtraccionContrato, SCHEMA_VERSION
 from services.drive_service import DocumentRecord
 from services.extraction_cache import CacheKey, crear_clave_cache
 from services.gemini_service import DEFAULT_MODEL, GeminiResult, extract_contract
+from services.gemini_errors import GeminiRequestError
 
 EXTRACTION_HEADERS = (
     "cache_key", "estado", "documento_id", "obra_id", "sha256_pdf",
@@ -270,13 +271,19 @@ def extract_or_reuse(
         # No incluir mensajes de proveedores; podrían mostrar detalles privados.
         reservation[1] = UNCERTAIN
         reservation[9] = _utc()
-        reservation[13] = type(exc).__name__[:80]
+        if isinstance(exc, GeminiRequestError):
+            incident_code = exc.public_code
+            guidance = exc.explanation
+        else:
+            incident_code = type(exc).__name__[:80]
+            guidance = "Revisa el registro antes de autorizar un nuevo análisis."
+        reservation[13] = incident_code
         try:
             _batch_write(sheets, spreadsheet_id, [("Extracciones", row_num, reservation)])
         except Exception:
             pass
         raise ExtractionStateError(
-            "No se confirmó el resultado de Gemini. Consulta la hoja Extracciones: "
-            "se bloquearon los reintentos automáticos para evitar cargos duplicados. "
-            f"Tipo de incidente: {type(exc).__name__}."
+            "No se confirmó el resultado de Gemini. "
+            f"Diagnóstico: {incident_code}. {guidance} "
+            "El reintento automático sigue bloqueado y la solicitud permanece en el historial."
         ) from None
