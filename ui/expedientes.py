@@ -19,6 +19,8 @@ from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
 from services.puc_schema import PUC_LABELS, PucExtractionV1
 from services.puc_store import extract_or_reuse_puc
+from services.dictamen_schema import DICTAMEN_LABELS, DictamenAdV1
+from services.dictamen_store import extract_or_reuse_dictamen
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
@@ -36,6 +38,11 @@ from services.writer_lock import get_writer_lock
 
 
 MAX_BATCH = 10
+# Solo estos extractores especializados están autorizados actualmente.
+ENABLED_EXTRACTORS = {
+    "PUC": "puc-v1",
+    "DICTAMEN_AD": "dictamen-ad-v1",
+}
 
 
 def _refresh_inventory() -> None:
@@ -168,6 +175,69 @@ def _summarize_saved(
                 )
             except Exception:
                 st.warning("La extracción PUC guardada no pudo interpretarse.")
+        elif old["version_esquema"] == "dictamen-ad-v1":
+            try:
+                report = DictamenAdV1.model_validate_json(old["resultado_json"])
+                st.markdown("#### Datos extraídos del dictamen de adjudicación directa")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Campo": label,
+                        "Texto literal": getattr(report, key).valor or "No localizado",
+                        "Página": getattr(report, key).pagina,
+                        "Evidencia": getattr(report, key).evidencia or "Sin evidencia",
+                    }
+                    for key, label in DICTAMEN_LABELS
+                ]), hide_index=True, use_container_width=True)
+                st.markdown("#### Fundamentos jurídicos citados")
+                if report.fundamentos:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Norma": x.norma or "—", "Artículos": x.articulos or "—",
+                            "Texto citado": x.texto_citado or "—",
+                            "Página": x.pagina, "Evidencia": x.evidencia or "—",
+                        } for x in report.fundamentos
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se extrajeron fundamentos jurídicos legibles.")
+                st.markdown("#### Motivación y justificación expresadas en el dictamen")
+                if report.motivaciones:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Tema": x.tema,
+                            "Afirmación literal": x.afirmacion,
+                            "Soporte mencionado": x.soporte_mencionado or "No mencionado",
+                            "Página": x.pagina, "Evidencia": x.evidencia or "—",
+                        } for x in report.motivaciones
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se extrajeron afirmaciones motivacionales.")
+                with st.expander("Documentos de soporte citados"):
+                    if report.soportes:
+                        st.dataframe(pd.DataFrame([
+                            {
+                                "Documento": x.documento,
+                                "Finalidad citada": x.finalidad_citada or "—",
+                                "Página": x.pagina,
+                                "Evidencia": x.evidencia or "—",
+                            } for x in report.soportes
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No se identificaron soportes documentales expresamente citados.")
+                st.caption(
+                    "Firma aparente (apreciación visual no autenticada): "
+                    f"{report.firma_aparente.presencia}. "
+                    f"{report.firma_aparente.nota_visual or ''}"
+                )
+                if report.observaciones:
+                    with st.expander("Advertencias de extracción"):
+                        for note in report.observaciones:
+                            st.write("• " + note)
+                st.caption(
+                    "Las afirmaciones y citas fueron extraídas del dictamen. "
+                    "No demuestran por sí mismas el cumplimiento del procedimiento."
+                )
+            except Exception:
+                st.warning("El dictamen guardado no pudo interpretarse con el esquema v1.")
         elif old["version_esquema"] == "contrato-v1":
             try:
                 parsed = ExtraccionContrato.model_validate_json(old["resultado_json"])
@@ -224,16 +294,25 @@ def _analyze(
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
-                # Validación temprana: nunca procesar como PUC otro tipo.
-                if code_from_filename(doc.name, doc.mime_type) != "PUC":
-                    raise ExtractionStateError(
-                        "Este documento no es PUC.pdf; extractor no disponible."
+                # Despacho explícito por código de archivo: nunca reutilizar
+                # el prompt del contrato para PUC o DICTAMEN_AD.
+                code = code_from_filename(doc.name, doc.mime_type)
+                if code == "PUC":
+                    result = extract_or_reuse_puc(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        model=model,
                     )
-                result = extract_or_reuse_puc(
-                    sheets, st.secrets["storage"]["spreadsheet_id"],
-                    pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
-                    model=model,
-                )
+                elif code == "DICTAMEN_AD":
+                    result = extract_or_reuse_dictamen(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        model=model,
+                    )
+                else:
+                    raise ExtractionStateError(
+                        "No existe extractor especializado para este tipo de documento."
+                    )
                 reused = result.cached
             outcome = "Reutilizado (sin IA)" if reused else "Analizado y guardado"
             log.append({"Documento": doc.name, "Resultado": outcome})
@@ -279,7 +358,7 @@ def _analyze(
 def render_expedientes(authenticated: bool) -> None:
     st.title("Expedientes de obra")
     st.caption(
-        "Explorador conectado a Google Drive · Etapa 2: extracción PUC-v1"
+        "Explorador conectado a Google Drive · Extracción por tipo documental"
     )
     if not authenticated:
         st.error("Se requiere iniciar sesión con una cuenta autorizada.")
@@ -388,9 +467,9 @@ def render_expedientes(authenticated: bool) -> None:
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
-        "Etapa 2: **PUC-v1 disponible**. Por ahora solo se analizarán archivos "
-        "PUC.pdf mediante Gemini. Los demás tipos conservan el código registrado, "
-        "pero todavía no tienen extractor habilitado."
+        "Extractores disponibles: **PUC-v1** y **DICTAMEN_AD-v1**. "
+        "La extracción comienza solo al pulsar Analizar; otros documentos "
+        "no se enviarán a Gemini hasta habilitar su esquema especializado."
     )
     ids = [work.id for work in inventory.works]
     label_by_id = {work.id: work.name for work in inventory.works}
@@ -439,9 +518,7 @@ def render_expedientes(authenticated: bool) -> None:
                 "Estado actual": states[d.id].label,
                 "Tipo documental": guess_from_name(d.name, d.mime_type).label,
                 "Extractor": (
-                    "PUC-v1 disponible"
-                    if code_from_filename(d.name, d.mime_type) == "PUC"
-                    else "No habilitado"
+                    ENABLED_EXTRACTORS.get(code_from_filename(d.name, d.mime_type), "No habilitado")
                 ),
                 "Compatibilidad": (
                     "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
@@ -452,9 +529,10 @@ def render_expedientes(authenticated: bool) -> None:
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
-    # Selección segura: solo PUC.pdf puede llegar a la función de extracción.
+    # Solo PUC y DICTAMEN_AD llegan a Gemini; el resto se omite.
     eligible = [
-        d for d in chosen if code_from_filename(d.name, d.mime_type) == "PUC"
+        d for d in chosen
+        if code_from_filename(d.name, d.mime_type) in ENABLED_EXTRACTORS
     ]
     ignored = [d for d in chosen if d.id not in {x.id for x in eligible}]
     if ignored:
@@ -474,11 +552,13 @@ def render_expedientes(authenticated: bool) -> None:
         row = registered.get(doc.id)
         if not row or row["obra_id"] != obra.id or row["activo"] != "SI":
             continue
-        if row["md5_checksum"] != doc.md5_checksum or row["tipo_documental"] != "PUC":
+        code = code_from_filename(doc.name, doc.mime_type)
+        schema = ENABLED_EXTRACTORS.get(code)
+        if row["md5_checksum"] != doc.md5_checksum or row["tipo_documental"] != code:
             continue
         pending_attempt = any(
             e["documento_id"] == doc.id and e["obra_id"] == obra.id
-            and e["version_esquema"] == "puc-v1"
+            and e["version_esquema"] == schema
             and e["estado"] in ("EN_PROCESO", "REQUIERE_REVISION")
             for e in tables["Extracciones"]
         )
@@ -487,7 +567,7 @@ def render_expedientes(authenticated: bool) -> None:
             continue
         saved = extractions.get(row["resultado_id"])
         if (
-            saved and saved["version_esquema"] == "puc-v1"
+            saved and saved["version_esquema"] == schema
             and saved["estado"] == "COMPLETADO" and saved["resultado_json"]
             and saved["documento_id"] == doc.id and saved["obra_id"] == obra.id
         ):
@@ -498,25 +578,25 @@ def render_expedientes(authenticated: bool) -> None:
     batch = to_process[:MAX_BATCH]
     if blocked:
         st.warning(
-            f"{blocked} PUC tienen intentos incompletos o inconsistencias. "
+            f"{blocked} documento(s) tienen intentos incompletos o inconsistencias. "
             "No habrá reintentos automáticos."
         )
     if reused:
         st.success(
-            f"{reused} PUC con extracción v1 guardada. "
+            f"{reused} documento(s) con extracción especializada guardada. "
             "Se pueden consultar sin volver a consumir Gemini."
         )
     if len(to_process) > MAX_BATCH:
         st.caption(
-            f"Se analizarán como máximo {MAX_BATCH} PUC por ejecución."
+            f"Se analizarán como máximo {MAX_BATCH} documentos por ejecución."
         )
 
     gemini = st.secrets.get("gemini", {})
     model = gemini.get("model") or DEFAULT_MODEL
-    st.caption(f"Modelo Gemini: {model} · Extractor: PUC-v1")
+    st.caption(f"Modelo Gemini: {model} · Extractores: PUC-v1 y DICTAMEN_AD-v1")
     disabled = not batch or not gemini.get("api_key")
     if st.button(
-        f"Analizar {len(batch)} PUC con IA",
+        f"Analizar {len(batch)} documento(s) con IA",
         type="primary", disabled=disabled, key="ex_analyze",
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
