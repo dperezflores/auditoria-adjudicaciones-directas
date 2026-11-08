@@ -8,6 +8,7 @@ import streamlit as st
 
 from security.app_access import require_access
 from ui.drive_explorer import render_drive_explorer
+from ui.dashboard_live import render_live_dashboard
 from services.drive_service import is_configured
 from services.sheets_service import storage_configured
 
@@ -54,7 +55,7 @@ with st.sidebar:
 
 st.title("AuditorIA")
 st.caption("Revisión de adjudicaciones directas de obra pública")
-st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta metadatos y ofrece extracción con Gemini, únicamente para el contrato ficticio y tras confirmación.")
+st.warning("**MODO PILOTO.** Explorador demo y pruebas de auditoría utilizan datos ficticios. El dashboard distingue datos registrados en Sheets de gráficos simulados. Solo el contrato ficticio puede enviarse a Gemini tras confirmación.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Explorador demo", "Pruebas de auditoría", "Dashboard general", "Google Drive (piloto)"])
 
@@ -119,8 +120,10 @@ with tab2:
                                for k,n in pruebas]), hide_index=True, use_container_width=True)
 
 with tab3:
-    st.subheader("Dashboard general")
-    st.caption("Indicadores de la demostración, no resultados de auditoría.")
+    render_live_dashboard(access_granted)
+    st.divider()
+    st.subheader("Gráficos de demostración")
+    st.caption("Indicadores ficticios, independientes de Google Sheets y de las extracciones.")
     df = pd.DataFrame([{"Obra":o["obra"],"Documentos":len(o["documentos"])} for o in obras])
     st.bar_chart(df.set_index("Obra")["Documentos"])
     st.dataframe(df, hide_index=True, use_container_width=True)
