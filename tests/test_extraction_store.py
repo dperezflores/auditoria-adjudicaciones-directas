@@ -106,7 +106,17 @@ class FakeValues:
                 row.extend([""] * (col + len(new_values) - len(row)))
             row[col:col + len(new_values)] = new_values
         self.writes += 1
-        return FakeRequest({"totalUpdatedRows": len(entries)})
+        unique_rows = {
+            (entry["range"].split("'")[1], re.search(r"[0-9]+", entry["range"]).group())
+            for entry in entries
+        }
+        return FakeRequest({
+            "totalUpdatedRows": len(unique_rows),
+            "responses": [
+                {"updatedRows": 1, "updatedRange": entry["range"]}
+                for entry in entries
+            ],
+        })
 
 
 class FakeSheets:
