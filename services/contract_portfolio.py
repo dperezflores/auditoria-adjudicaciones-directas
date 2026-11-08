@@ -193,7 +193,7 @@ def _contract_from_general_json(
     if not isinstance(payload, dict):
         return None
     category = _normalize_field(str(payload.get("tipo_documental") or ""))
-    if not re.search(r"\\bcontrato\\b", category) or "obra" not in category:
+    if not re.search(r"\bcontrato\b", category) or "obra" not in category:
         return None
     facts = payload.get("campos")
     if not isinstance(facts, list):
@@ -255,7 +255,7 @@ def _contract_from_general_json(
                 # Exigir que se indique para el mismo importe extraído.
                 quote = _normalize_field(str(fact.get("evidencia") or ""))
                 nearby = (
-                    re.search(r"\\biva\\b", label)
+                    re.search(r"\biva\b", label)
                     or ("iva incluido" in quote and value.casefold() in str(fact.get("evidencia") or "").casefold())
                     or ("iva incluido" in summary and value.casefold() in str(payload.get("resumen") or "").casefold())
                 )
