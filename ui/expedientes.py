@@ -72,6 +72,9 @@ def _refresh_inventory() -> None:
     st.session_state["ex_inventory"] = inventory
     st.session_state["ex_status_tables"] = tables
     st.session_state["ex_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Un resultado anterior puede pertenecer a otra sesión de expedientes.
+    st.session_state.pop("ex_last_run", None)
+    st.session_state.pop("ex_last_run_obra_id", None)
 
 
 def _load_data() -> bool:
@@ -868,8 +871,9 @@ def render_expedientes(authenticated: bool) -> None:
     ignored = [d for d in chosen if d.id not in {x.id for x in eligible}]
     if ignored:
         st.warning(
-            f"{len(ignored)} documento(s) carecen de extractor habilitado. "
-            "No se enviarán a Gemini."
+            f"{len(ignored)} documento(s) no tienen un nombre canónico "
+            "reconocido o un extractor compatible con su formato. "
+            "Revisa nombre y extensión en Drive. No se enviarán a Gemini."
         )
 
     registered = {row["documento_id"]: row for row in tables["Documentos"]}
@@ -877,6 +881,7 @@ def render_expedientes(authenticated: bool) -> None:
     to_process = []
     reused = 0
     blocked = 0
+    needs_sync = 0
     for doc in eligible:
         limit = MAX_XLSX_BYTES if doc.mime_type == XLSX_MIME else MAX_PDF_BYTES
         if not (0 < doc.size_bytes <= limit):
@@ -887,6 +892,7 @@ def render_expedientes(authenticated: bool) -> None:
         code = code_from_filename(doc.name, doc.mime_type)
         schema = ENABLED_EXTRACTORS.get(code)
         if row["md5_checksum"] != doc.md5_checksum or row["tipo_documental"] != code:
+            needs_sync += 1
             continue
         pending_attempt = any(
             e["documento_id"] == doc.id and e["obra_id"] == obra.id
@@ -911,6 +917,12 @@ def render_expedientes(authenticated: bool) -> None:
         if states[doc.id].label != "Sin registrar":
             to_process.append(doc)
     batch = to_process[:MAX_BATCH]
+    if needs_sync:
+        st.warning(
+            f"{needs_sync} documento(s) tienen la clasificación o huella "
+            "desactualizada en Google Sheets. Pulsa Actualizar Google Drive "
+            "antes de analizarlos; no se enviarán a Gemini mientras tanto."
+        )
     if blocked:
         st.warning(
             f"{blocked} documento(s) tienen intentos incompletos o inconsistencias. "
@@ -936,7 +948,8 @@ def render_expedientes(authenticated: bool) -> None:
     requires_gemini = any(d.mime_type != XLSX_MIME for d in batch)
     disabled = not batch or (requires_gemini and not gemini.get("api_key"))
     button_label = (
-        f"Analizar {len(batch)} documento(s) con IA y/o importar Excel"
+        "No hay documentos pendientes para procesar" if not batch
+        else f"Analizar {len(batch)} documento(s) con IA y/o importar Excel"
         if requires_gemini else f"Importar {len(batch)} catálogo(s) sin IA"
     )
     if st.button(
@@ -944,9 +957,13 @@ def render_expedientes(authenticated: bool) -> None:
         type="primary", disabled=disabled, key="ex_analyze",
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
+        st.session_state["ex_last_run_obra_id"] = obra.id
         st.rerun()
 
-    if st.session_state.get("ex_last_run"):
+    if (
+        st.session_state.get("ex_last_run_obra_id") == obra.id
+        and st.session_state.get("ex_last_run")
+    ):
         st.markdown("#### Resultado de la última ejecución")
         st.dataframe(
             pd.DataFrame(st.session_state["ex_last_run"]),
