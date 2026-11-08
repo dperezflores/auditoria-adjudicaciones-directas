@@ -12,7 +12,6 @@ import re
 from typing import Any, Sequence
 from uuid import uuid4
 
-from services.contract_schema import ExtraccionContrato
 from services.gemini_compact_schema import CAMPOS_CONTRATO
 from services.extraction_store import DOCUMENT_HEADERS, CONTRACT_HEADERS
 
@@ -194,8 +193,12 @@ def save_review(
         return False, previous
 
     current = _read_current_context(client, spreadsheet_id)
-    docs = [dict(zip(DOCUMENT_HEADERS, row)) for row in current["Documentos"]]
-    contracts = [dict(zip(CONTRACT_HEADERS, row)) for row in current["DatosContrato"]]
+    def as_record(headers: tuple[str, ...], row: list[str]) -> dict[str, str]:
+        values = row[:len(headers)] + [""] * max(0, len(headers) - len(row))
+        return dict(zip(headers, values))
+
+    docs = [as_record(DOCUMENT_HEADERS, row) for row in current["Documentos"]]
+    contracts = [as_record(CONTRACT_HEADERS, row) for row in current["DatosContrato"]]
     matching_docs = [d for d in docs if d["documento_id"] == event.documento_id]
     matching_data = [
         d for d in contracts
