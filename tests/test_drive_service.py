@@ -7,6 +7,9 @@ from services.drive_service import (
     FOLDER_MIME,
     PDF_MIME,
     DriveConfigurationError,
+    DriveConnectionError,
+    MAX_PDF_BYTES,
+    check_pdf_size,
     is_configured,
     scan_drive,
     validate_id,
@@ -154,6 +157,23 @@ class DriveTests(unittest.TestCase):
         result = scan_drive(_Service(data), ROOT)
         self.assertEqual(result.pdf_total, 2)
         self.assertEqual(len({d.id for d in result.works[0].pdfs}), 2)
+
+    def test_actual_21mb_pdf_is_now_supported(self):
+        # Documento usado en la prueba real: antes superaba el límite
+        # artificial de 20 MiB y no llegaba a Gemini.
+        self.assertGreater(21_284_183, 20 * 1024 * 1024)
+        self.assertLess(21_284_183, MAX_PDF_BYTES)
+        self.assertIsNone(check_pdf_size(21_284_183))
+
+    def test_50mb_limit_rejects_overflow_precisely(self):
+        self.assertEqual(MAX_PDF_BYTES, 50_000_000)
+        self.assertIsNone(check_pdf_size(MAX_PDF_BYTES))
+        with self.assertRaisesRegex(DriveConnectionError, "50 MB"):
+            check_pdf_size(MAX_PDF_BYTES + 1)
+
+    def test_invalid_pdf_size_rejected_before_request(self):
+        with self.assertRaisesRegex(DriveConnectionError, "tamaño válido"):
+            check_pdf_size(0)
 
     def test_invalid_root_type_rejected(self):
         data = self.sample_data()
