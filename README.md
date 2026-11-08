@@ -4,7 +4,7 @@ Piloto para la revisión documental y pruebas de auditoría de adjudicación dir
 
 ## Estado actual
 **Etapa 1: base de código y demostración de Streamlit.**
-La versión inicial usa exclusivamente datos ficticios y no realiza análisis de IA ni conexiones con expedientes reales.
+Las tres vistas originales usan datos ficticios. Ya existe un explorador Drive independiente y de solo lectura, **pendiente de configurar** con una cuenta de servicio y acceso exclusivo a la carpeta piloto. Todavía no hay Gemini ni registros persistentes.
 
 ## Objetivo
 1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
@@ -43,3 +43,9 @@ El prototipo visual no debe confundirse con un dictamen de auditoría ni con una
 El proyecto preparado para las siguientes integraciones es `auditoria-ad-piloto`. La guía detallada para habilitar Drive y Sheets y preparar posteriormente OAuth está en [docs/CONFIGURACION_GOOGLE_CLOUD.md](docs/CONFIGURACION_GOOGLE_CLOUD.md).
 
 **Nota:** todavía no se han habilitado ni verificado las APIs desde esta aplicación, y las credenciales no están configuradas. No cargues archivos reales mientras la versión publicada sea una demostración pública.
+
+## Sincronización inicial de Google Drive
+
+El módulo `services/drive_service.py` lista carpetas y metadatos PDF únicamente cuando se completa la configuración privada de una cuenta de servicio. No descarga archivos ni ejecuta IA. Consulta [la guía de conexión central de Drive](docs/CONEXION_DRIVE_CUENTA_SERVICIO.md) antes de configurar credenciales.
+
+**Limitación actual:** no se conserva un historial de sincronizaciones entre sesiones; el control de cambios persistente se implementará junto con Google Sheets.
