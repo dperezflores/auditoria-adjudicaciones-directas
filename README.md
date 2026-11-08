@@ -66,3 +66,9 @@ con decisión `Confirmado`, `Corregido` o `No localizado`, y una referencia
 a la página y evidencia del PDF. Los eventos se guardan en la hoja
 `RevisionesContrato` sin sobrescribir los datos extraídos por Gemini.
 Consulta [la guía de cotejo manual](docs/COTEJO_MANUAL_CONTRATOS.md).
+
+## Interfaz operativa (expedientes de Google Drive)
+
+La pantalla principal ya no es la demostración: ahora muestra **Expedientes**, **Resultados** y **Pruebas de adjudicación**. Desde Expedientes se ven carpetas y archivos, el estado de análisis por PDF y carpeta, y se pueden seleccionar **un PDF, varios PDFs o una carpeta completa** para analizarlos en una misma ejecución con Gemini. Los análisis se almacenan en Google Sheets y se reutilizan cuando ya existe un resultado compatible. No se generan análisis al navegar.
+
+Lee [el manual operativo](docs/INTERFAZ_OPERATIVA_EXPEDIENTES.md) antes de conectar expedientes reales. La raíz actual de Drive sigue siendo la carpeta anteriormente configurada; para trabajar en otro repositorio, comparte la nueva carpeta con la cuenta de servicio y actualiza solo `[drive].root_folder_id` en los secretos de Streamlit. **Las pruebas normativas cruzadas todavía están por implementar.**
