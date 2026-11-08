@@ -332,9 +332,16 @@ def render_expedientes(authenticated: bool) -> None:
                     {
                         "Archivo": (other.relative_path + "/" if other.relative_path else "") + other.name,
                         "Formato": other.mime_type,
-                        "Código sugerido": guess_from_name(doc.name, doc.mime_type).label,
-                            "Estado": "Excel registrado · sin extractor" if doc.mime_type == XLSX_MIME
-                            else "Formato no compatible",
+                        "Código sugerido": guess_from_name(other.name, other.mime_type).label,
+                        "Código registrado": next((
+                            row["tipo_documental"] for row in tables["Documentos"]
+                            if row["documento_id"] == other.id
+                        ), "") or "Sin confirmar",
+                        "Estado": (
+                            "Excel registrado · extractor pendiente"
+                            if other.mime_type == XLSX_MIME
+                            else "Formato no compatible"
+                        ),
                     }
                     for other in work.other_files
                 ]), hide_index=True, use_container_width=True)
