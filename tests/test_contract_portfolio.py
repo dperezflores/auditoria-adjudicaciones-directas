@@ -183,6 +183,93 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(money_text(Decimal("2500.00"), "MXN"), "$2,500.00 MXN")
 
 
+def _generic_contract_dataset():
+    data = dataset()
+    data["Obras"].append([
+        "workUyepac", "00_591_25_ParqueUyepac", "", "3", "2", "0", "", "SI", "1",
+    ])
+    data["Documentos"].append([
+        "docUyepac", "workUyepac", "CNT_DIR_CNT.pdf", "",
+        "application/pdf", "md5Uyepac", "", "20857265", "Analizado",
+        "", "", "SI", "gemini:documento-prompt-v1", "cacheGeneral", "", "1",
+    ])
+    labels = [
+        ("Número de Contrato", "A-1816-K100288-62201-E/0591/2025"),
+        ("Objeto de la Obra", "Construcción de parque público Uyepac"),
+        ("Contratista", "Arq. Alejandro Gutiérrez Gutiérrez de Velasco"),
+        ("Fecha de Firma del Contrato", "04 de diciembre de 2025"),
+        ("Fecha de Inicio de Obra", "15 de diciembre de 2025"),
+        ("Fecha de Terminación de Obra", "04 de abril de 2026"),
+        ("Monto del Contrato", "$2,231,632.00"),
+        ("Anticipo", "30%"),
+    ]
+    facts = [
+        {"campo": k, "valor": v, "pagina": 1, "evidencia": f"Documento: {v}"}
+        for k, v in labels
+    ]
+    payload = {
+        "tipo_documental": "Contrato de Obra Pública",
+        "resumen": "Monto total de $2,231,632.00 IVA incluido.",
+        "campos": facts,
+        "alertas": [],
+    }
+    data["Extracciones"].append([
+        "cacheGeneral", "COMPLETADO", "docUyepac", "workUyepac",
+        "hash", "gemini-3.5-flash-lite", "documento-prompt-v1",
+        "documento-schema-v1", "", "2026-11-08",
+        json.dumps(payload), "100", "100", "",
+    ])
+    return data
+
+
+class GeneralContractPortfolioTests(unittest.TestCase):
+    def test_generic_contract_extracted_without_new_api_call(self):
+        portfolio = prepare_contract_portfolio(_generic_contract_dataset())
+        self.assertEqual(portfolio.works_count, 2)
+        self.assertEqual(len(portfolio.records), 2)
+        general = next(r for r in portfolio.records if r.source_schema == "documento-schema-v1")
+        self.assertEqual(general.values["numero_contrato"], "A-1816-K100288-62201-E/0591/2025")
+        self.assertEqual(general.values["contratista"], "Arq. Alejandro Gutiérrez Gutiérrez de Velasco")
+        self.assertEqual(general.values["monto_con_iva"], "$2,231,632.00")
+        self.assertEqual(general.values["porcentaje_anticipo"], "30%")
+        self.assertEqual(general.coverage, "8/8")
+        self.assertEqual(general.evidence["numero_contrato"]["pagina"], 1)
+        self.assertIn("extracción general", general.status_label)
+        total, explanation, missing = amount_summary(portfolio.records)
+        self.assertEqual(total, Decimal("4581782.88"))
+        self.assertEqual(missing, 0)
+
+    def test_generic_contract_does_not_require_flat_data_row(self):
+        data = _generic_contract_dataset()
+        self.assertEqual(len(data["DatosContrato"]), 3)
+        self.assertEqual(len(prepare_contract_portfolio(data).records), 2)
+
+    def test_generic_contract_not_counted_if_inactive_or_old(self):
+        data = _generic_contract_dataset()
+        data["Documentos"][-1][11] = "NO"
+        self.assertEqual(len(prepare_contract_portfolio(data).records), 1)
+        data = _generic_contract_dataset()
+        data["Documentos"][-1][13] = "different-version"
+        self.assertEqual(len(prepare_contract_portfolio(data).records), 1)
+
+    def test_non_contract_document_excluded(self):
+        data = _generic_contract_dataset()
+        payload = json.loads(data["Extracciones"][-1][10])
+        payload["tipo_documental"] = "Padrón Único de Contratistas"
+        data["Extracciones"][-1][10] = json.dumps(payload)
+        self.assertEqual(len(prepare_contract_portfolio(data).records), 1)
+
+    def test_amount_does_not_claim_iva_without_source(self):
+        data = _generic_contract_dataset()
+        payload = json.loads(data["Extracciones"][-1][10])
+        payload["resumen"] = "Contrato por importe $2,231,632.00."
+        data["Extracciones"][-1][10] = json.dumps(payload)
+        portfolio = prepare_contract_portfolio(data)
+        general = next(r for r in portfolio.records if r.source_schema == "documento-schema-v1")
+        self.assertEqual(general.values["monto_con_iva"], "")
+        self.assertIsNone(general.amount)
+
+
 class _Request:
     def __init__(self, payload):
         self.payload = payload
