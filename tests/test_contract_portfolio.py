@@ -69,6 +69,7 @@ def dataset():
         "Documentos": documents,
         "Extracciones": analyses,
         "DatosContrato": rows,
+        "DatosContratoV2": [list(HEADERS["DatosContratoV2"])],
     }
 
 
