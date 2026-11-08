@@ -697,7 +697,7 @@ def render_expedientes(authenticated: bool) -> None:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Carpetas", len(inventory.works))
     col2.metric("PDF y catálogos registrados", pdf_total + catalog_total)
-    col3.metric("Analizados con IA", complete)
+    col3.metric("Procesados (IA o Excel)", complete)
     col4.metric("Pendientes o parciales", pdf_total + catalog_total - complete)
 
     if not inventory.works:
