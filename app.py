@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from security.app_access import require_access
+from ui.drive_explorer import render_drive_explorer
 
 st.set_page_config(page_title="AuditorIA | Adjudicaciones directas", page_icon="📋", layout="wide")
 
@@ -50,7 +51,7 @@ st.title("AuditorIA")
 st.caption("Revisión de adjudicaciones directas de obra pública")
 st.warning("**MODO DEMOSTRACIÓN.** Obras y documentos ficticios. Ningún archivo real se consulta, almacena ni envía a IA.")
 
-tab1, tab2, tab3 = st.tabs(["Explorador de obras", "Pruebas de auditoría", "Dashboard general"])
+tab1, tab2, tab3, tab4 = st.tabs(["Explorador demo", "Pruebas de auditoría", "Dashboard general", "Google Drive (piloto)"])
 
 with tab1:
     st.subheader("Explorador documental")
@@ -121,4 +122,7 @@ with tab3:
     st.download_button("Exportar muestra ficticia (CSV)", data=df.to_csv(index=False).encode("utf-8-sig"),
                        file_name="auditoria_demo.csv", mime="text/csv")
 
-st.caption("AuditorIA · Primera entrega técnica · Sin conexión externa ni tratamiento de datos reales")
+with tab4:
+    render_drive_explorer(access_granted)
+
+st.caption("AuditorIA · Primera entrega técnica · Conector Drive opcional, solo entorno autorizado")
