@@ -261,7 +261,16 @@ def render_expedientes(authenticated: bool) -> None:
             expanded=len(visible) == 1,
         ):
             if not work.pdfs:
-                st.caption("Esta carpeta aún no contiene archivos PDF.")
+                st.caption("Esta carpeta no contiene PDF compatibles con el analizador.")
+                if work.other_files:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Archivo": (doc.relative_path + "/" if doc.relative_path else "") + doc.name,
+                            "Formato": doc.mime_type,
+                            "Estado IA": "Pendiente de compatibilidad",
+                        }
+                        for doc in work.other_files
+                    ]), hide_index=True, use_container_width=True)
                 continue
             st.dataframe(pd.DataFrame([
                 {
@@ -272,7 +281,20 @@ def render_expedientes(authenticated: bool) -> None:
                 }
                 for doc in work.pdfs
             ]), hide_index=True, use_container_width=True)
-            st.caption("La categoría se estima a partir del nombre. Los resultados son preliminares.")
+            if work.other_files:
+                st.markdown("**Otros documentos detectados**")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Archivo": (other.relative_path + "/" if other.relative_path else "") + other.name,
+                        "Formato": other.mime_type,
+                        "Estado IA": "Pendiente de compatibilidad",
+                    }
+                    for other in work.other_files
+                ]), hide_index=True, use_container_width=True)
+            st.caption(
+                "La categoría se estima a partir del nombre. "
+                "El análisis automático admite PDF; otros formatos se muestran sin enviarse a Gemini."
+            )
 
     st.divider()
     st.markdown("### Analizar documentos")
