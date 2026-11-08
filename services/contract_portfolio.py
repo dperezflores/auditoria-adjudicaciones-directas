@@ -57,6 +57,7 @@ class ContractRecord:
     amount: Decimal | None
     currency: str
     signature_year: str
+    source_schema: str = "contrato-v1"
 
     @property
     def missing_fields(self) -> tuple[str, ...]:
@@ -68,6 +69,12 @@ class ContractRecord:
 
     @property
     def status_label(self) -> str:
+        if self.source_schema == "documento-schema-v1":
+            return (
+                "Contrato identificado · datos incompletos"
+                if self.completeness < len(DATA_FIELDS)
+                else "Contrato identificado · extracción general"
+            )
         if self.state == "REQUIERE_REVISION":
             return "Recuperación parcial"
         if self.completeness < len(DATA_FIELDS):
@@ -163,6 +170,116 @@ def signature_year(text: str) -> str:
     return years[0] if len(set(years)) == 1 and years else "Sin año"
 
 
+def _normalize_field(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text.casefold())
+    return " ".join(
+        "".join(c for c in normalized if not unicodedata.combining(c)).split()
+    )
+
+
+def _contract_from_general_json(
+    raw_json: str,
+) -> tuple[dict[str, str], dict[str, dict[str, Any]], tuple[str, ...]] | None:
+    """Adaptar la ficha general de un contrato sin llamadas adicionales a IA.
+
+    Solo admite hechos explícitos, nunca fechas/montos inferidos del nombre
+    o la carpeta. Mantiene página y fragmento de evidencia tal como se
+    guardaron. Los importes se etiquetan con IVA sólo si es explícito.
+    """
+    try:
+        payload = json.loads(raw_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    category = _normalize_field(str(payload.get("tipo_documental") or ""))
+    if not re.search(r"\\bcontrato\\b", category) or "obra" not in category:
+        return None
+    facts = payload.get("campos")
+    if not isinstance(facts, list):
+        return None
+
+    aliases = {
+        "numero_contrato": (
+            "numero de contrato", "numero del contrato", "no de contrato",
+            "numero contrato", "folio de contrato",
+        ),
+        "nombre_obra": (
+            "objeto de la obra", "nombre de la obra", "nombre de obra",
+            "objeto del contrato", "obra contratada",
+        ),
+        "contratista": (
+            "contratista", "nombre del contratista", "razon social del contratista",
+            "nombre o razon social del contratista",
+        ),
+        "fecha_firma": (
+            "fecha de firma del contrato", "fecha de firma",
+            "fecha de suscripcion", "fecha del contrato",
+        ),
+        "fecha_inicio": (
+            "fecha de inicio de obra", "fecha de inicio de la obra",
+            "fecha de inicio", "inicio de los trabajos",
+        ),
+        "fecha_termino": (
+            "fecha de terminacion de obra", "fecha de termino",
+            "fecha de terminacion", "termino de los trabajos",
+            "fecha de conclusion",
+        ),
+        "monto_con_iva": (
+            "monto del contrato", "monto de contrato",
+            "monto con iva", "importe del contrato", "importe total con iva",
+        ),
+        "porcentaje_anticipo": (
+            "anticipo", "porcentaje de anticipo", "porcentaje del anticipo",
+        ),
+    }
+    normalized_aliases = {
+        key: {_normalize_field(label) for label in labels}
+        for key, labels in aliases.items()
+    }
+    values = {field: "" for field in DATA_FIELDS}
+    evidence: dict[str, dict[str, Any]] = {}
+    summary = _normalize_field(str(payload.get("resumen") or ""))
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        label = _normalize_field(str(fact.get("campo") or ""))
+        value = fact.get("valor")
+        if not isinstance(value, str) or not value.strip():
+            continue
+        for field in DATA_FIELDS:
+            if label not in normalized_aliases[field] or values[field]:
+                continue
+            if field == "monto_con_iva":
+                # No asumir IVA por tratarse de contrato mexicano.
+                # Exigir que se indique para el mismo importe extraído.
+                quote = _normalize_field(str(fact.get("evidencia") or ""))
+                nearby = (
+                    re.search(r"\\biva\\b", label)
+                    or ("iva incluido" in quote and value.casefold() in str(fact.get("evidencia") or "").casefold())
+                    or ("iva incluido" in summary and value.casefold() in str(payload.get("resumen") or "").casefold())
+                )
+                if not nearby:
+                    continue
+            values[field] = value.strip()
+            evidence[field] = {
+                "pagina": fact.get("pagina") if isinstance(fact.get("pagina"), int) else None,
+                "evidencia": fact.get("evidencia") if isinstance(fact.get("evidencia"), str) else None,
+                "valor": value.strip(),
+            }
+            break
+
+    if not any(values.values()):
+        return None
+    alerts = payload.get("alertas")
+    notes = tuple(str(item) for item in alerts[:12] if isinstance(item, str)) if isinstance(alerts, list) else ()
+    return values, evidence, (
+        "El contrato fue identificado mediante la extracción documental general; "
+        "sus campos se normalizaron sin otra solicitud a Gemini.",
+        *notes,
+    )
+
+
 def prepare_contract_portfolio(
     tables: Mapping[str, Sequence[Sequence[Any]]],
 ) -> ContractPortfolio:
@@ -250,6 +367,50 @@ def prepare_contract_portfolio(
             currency=currency_group(values["monto_con_iva"]),
             signature_year=signature_year(values["fecha_firma"]),
         ))
+    # Algunos contratos reales tienen nombres abreviados como CNT_DIR_CNT.pdf.
+    # El analizador general los reconoce por contenido y guarda en Extracciones,
+    # pero no crea una fila en DatosContrato. Incorporar esos resultados sin
+    # volver a llamar a Gemini ni modificar Google Sheets.
+    current_docs = {record.documento_id for record in records}
+    for analysis in parsed["Extracciones"]:
+        if (
+            analysis["version_esquema"] != "documento-schema-v1"
+            or analysis["estado"] != "COMPLETADO"
+            or not analysis["resultado_json"]
+        ):
+            continue
+        doc_id, obra_id = analysis["documento_id"], analysis["obra_id"]
+        document = documents.get(doc_id)
+        if (
+            not document or doc_id in current_docs
+            or document["obra_id"] != obra_id
+            or document["resultado_id"] != analysis["cache_key"]
+            or document["estado_procesamiento"] == "Modificado desde el último análisis"
+            or document["mime_type"] != "application/pdf"
+        ):
+            continue
+        normalized = _contract_from_general_json(analysis["resultado_json"])
+        if normalized is None:
+            continue
+        values, evidence, observations = normalized
+        records.append(ContractRecord(
+            obra_id=obra_id,
+            documento_id=doc_id,
+            cache_key=analysis["cache_key"],
+            nombre_carpeta=works[obra_id]["nombre_carpeta"],
+            documento=document["nombre_archivo"],
+            values=values,
+            evidence=evidence,
+            observations=observations,
+            state=analysis["estado"],
+            extracted_at=analysis["actualizado_utc"],
+            completeness=sum(bool(v) for v in values.values()),
+            amount=parse_amount(values["monto_con_iva"]),
+            currency=currency_group(values["monto_con_iva"]),
+            signature_year=signature_year(values["fecha_firma"]),
+            source_schema="documento-schema-v1",
+        ))
+        current_docs.add(doc_id)
     records.sort(
         key=lambda r: (r.signature_year, r.values["numero_contrato"], r.documento_id),
         reverse=True,
