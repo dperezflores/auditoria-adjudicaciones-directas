@@ -6,7 +6,9 @@ import unittest
 
 from services.contract_schema import ExtraccionContrato
 from services.drive_service import DocumentRecord
-from services.extraction_store import ExtractionStateError, extract_or_reuse
+from services.extraction_store import (
+    ExtractionStateError, extract_or_reuse, recover_saved_fields,
+)
 from services.gemini_service import GeminiResult
 from services.gemini_errors import GeminiRequestError
 from services.extraction_cache import crear_clave_cache
@@ -73,6 +75,7 @@ class FakeValues:
             ]],
         }
         self.writes = 0
+        self.simulate_confirmation_failure = False
 
     def batchGet(self, **kwargs):
         result = []
@@ -112,10 +115,13 @@ class FakeValues:
         }
         return FakeRequest({
             "totalUpdatedRows": len(unique_rows),
-            "responses": [
-                {"updatedRows": 1, "updatedRange": entry["range"]}
-                for entry in entries
-            ],
+            "responses": (
+                [] if self.simulate_confirmation_failure and len(entries) > 1
+                else [
+                    {"updatedRows": 1, "updatedRange": entry["range"]}
+                    for entry in entries
+                ]
+            ),
         })
 
 
@@ -165,6 +171,52 @@ class ExtractionStoreTests(unittest.TestCase):
         self.assertEqual(self.calls, 1)
         self.assertEqual(second.extraction.numero_contrato.valor, "AD-001")
         self.assertEqual(len(self.client.store.tables["Extracciones"]), 2)
+
+    def test_sheets_counts_three_distinct_rows_for_four_ranges(self):
+        first = self.run_analysis()
+        self.assertFalse(first.cached)
+        self.assertEqual(self.calls, 1)
+        # Se actualizan Extracciones, DatosContrato y Documentos;
+        # dos rangos de Documentos se refieren a LA MISMA fila.
+        self.assertEqual(self.client.store.writes, 2)
+        self.assertEqual(self.client.store.tables["Extracciones"][1][1], "COMPLETADO")
+
+    def test_recover_partial_saved_fields_without_provider_call(self):
+        self.run_analysis()
+        previous_calls = self.calls
+        attempt = self.client.store.tables["Extracciones"][1]
+        attempt[1] = "REQUIERE_REVISION"
+        attempt[10] = ""
+        attempt[13] = "ExtractionStateError"
+
+        before = repr(self.client.store.tables)
+        recovered = recover_saved_fields(
+            self.client, "sheet-123", PDF, self.doc, OBRA_ID,
+            model="gemini-3.5-flash-lite",
+        )
+        self.assertIsNotNone(recovered)
+        self.assertTrue(recovered.recovered_partial)
+        self.assertTrue(recovered.cached)
+        self.assertEqual(recovered.extraction.numero_contrato.valor, "AD-001")
+        self.assertIsNone(recovered.extraction.numero_contrato.evidencia)
+        self.assertIsNone(recovered.extraction.numero_contrato.pagina)
+        self.assertEqual(self.calls, previous_calls)
+        self.assertEqual(repr(self.client.store.tables), before)
+
+    def test_no_reservation_overwrite_after_unconfirmed_post_write(self):
+        self.client.store.simulate_confirmation_failure = True
+        with self.assertRaisesRegex(ExtractionStateError, "Gemini devolvió"):
+            self.run_analysis()
+        attempt = self.client.store.tables["Extracciones"][1]
+        self.assertEqual(attempt[1], "COMPLETADO")
+        self.assertTrue(attempt[10])
+        self.assertEqual(len(self.client.store.tables["DatosContrato"]), 2)
+        self.assertEqual(self.calls, 1)
+        # La siguiente carga usa el resultado completo ya persistido;
+        # no debe generar otra petición.
+        cached = self.run_analysis()
+        self.assertTrue(cached.cached)
+        self.assertEqual(self.calls, 1)
 
     def test_renaming_keeps_cache(self):
         self.run_analysis()
