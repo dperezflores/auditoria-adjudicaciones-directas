@@ -7,6 +7,7 @@ visibles proceden de DatosContrato y de la extracción JSON original.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from decimal import Decimal
 import pandas as pd
 import plotly.express as px
@@ -17,6 +18,8 @@ from services.contract_portfolio import (
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
 )
 from services.sheets_service import create_sheets_client, storage_configured
+from services.analysis_catalog import load_status_tables
+from services.catalogo_xlsx import CATALOGO_SCHEMA_VERSION
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
 from ui.document_crosscheck import render_document_crosscheck
@@ -27,6 +30,25 @@ def _fetch_portfolio() -> None:
     st.session_state["results_portfolio"] = read_contract_portfolio(
         client, st.secrets["storage"]["spreadsheet_id"]
     )
+    tables = load_status_tables(client, st.secrets["storage"]["spreadsheet_id"])
+    saved = {r["cache_key"]: r for r in tables["Extracciones"]}
+    catalogs = {}
+    for doc in tables["Documentos"]:
+        if doc["tipo_documental"] != "CATALOGO" or doc["activo"] != "SI":
+            continue
+        entry = saved.get(doc["resultado_id"])
+        if not entry or entry["version_esquema"] != CATALOGO_SCHEMA_VERSION:
+            continue
+        if entry["documento_id"] != doc["documento_id"] or entry["obra_id"] != doc["obra_id"]:
+            continue
+        if entry["estado"] != "COMPLETADO" or not entry["resultado_json"]:
+            continue
+        try:
+            summary = json.loads(entry["resultado_json"])
+            catalogs.setdefault(doc["obra_id"], []).append(summary)
+        except (ValueError, TypeError):
+            continue
+    st.session_state["results_catalogs"] = catalogs
     st.session_state["results_last_read"] = (
         datetime.now(timezone.utc).isoformat(timespec="seconds")
     )
@@ -337,6 +359,15 @@ def render_results() -> None:
     )
     chosen_contract = filtered[chosen_index]
     _render_details(chosen_contract)
+    for summary in st.session_state.get("results_catalogs", {}).get(chosen_contract.obra_id, []):
+        st.markdown("#### Catálogo original de la obra (Excel, sin IA)")
+        a, b, c = st.columns(3)
+        a.metric("Conceptos contratados", summary["conceptos_originales"])
+        b.metric("Conceptos fuera de catálogo excluidos", summary["excluidos_fuera_catalogo"])
+        c.metric("Importe inicial calculado sin IVA", summary["importe_original_calculado_sin_iva"])
+        st.caption("Fuente: CATALOGO.xlsx · Cantidad Inicial × Precio U. "
+                   "No se incluyen excedentes ni conceptos extraordinarios. "
+                   "Consultar detalle y filas en Expedientes.")
     st.divider()
     render_document_crosscheck(chosen_contract, portfolio.supporting_documents)
     st.divider()

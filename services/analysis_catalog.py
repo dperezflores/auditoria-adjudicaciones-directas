@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 import unicodedata
 
 from services.drive_service import DriveInventory, DocumentRecord, WorkRecord
+from services.document_classifier import code_from_filename
 from services.sync_engine import HEADERS
 from services.extraction_store import EXTRACTION_HEADERS, CONTRACT_HEADERS
 
@@ -105,7 +106,11 @@ def file_states(
     }
     states: dict[str, FileStatus] = {}
     for work in inventory.works:
-        for doc in work.pdfs:
+        supported = [
+            *work.pdfs,
+            *(d for d in work.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
+        ]
+        for doc in supported:
             registered = documents.get(doc.id)
             kind = suggest_kind(doc.name)
             if not registered:
@@ -114,7 +119,7 @@ def file_states(
                   or registered["md5_checksum"] != doc.md5_checksum):
                 state = FileStatus(doc.id, "Desactualizado", "El registro no coincide con Drive.", kind)
             elif registered["estado_procesamiento"] == "Modificado desde el último análisis":
-                state = FileStatus(doc.id, "Desactualizado", "Cambió el contenido del PDF.", kind)
+                state = FileStatus(doc.id, "Desactualizado", "Cambió el contenido del documento.", kind)
             else:
                 key = registered["resultado_id"]
                 current = analyses.get(key)
@@ -144,9 +149,13 @@ def folder_states(
 ) -> dict[str, FolderStatus]:
     result = {}
     for work in inventory.works:
-        total = len(work.pdfs)
-        done = sum(statuses[d.id].label == "Analizado" for d in work.pdfs)
-        partial = sum(statuses[d.id].label == "Parcial" for d in work.pdfs)
+        supported = [
+            *work.pdfs,
+            *(d for d in work.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
+        ]
+        total = len(supported)
+        done = sum(statuses[d.id].label == "Analizado" for d in supported)
+        partial = sum(statuses[d.id].label == "Parcial" for d in supported)
         pending = total - done - partial
         if total == 0:
             label = "Sin PDF"
@@ -154,7 +163,7 @@ def folder_states(
             label = "Analizada"
         elif done or partial:
             label = "Parcial"
-        elif any(statuses[d.id].label == "Revisar error" for d in work.pdfs):
+        elif any(statuses[d.id].label == "Revisar error" for d in supported):
             label = "Revisar error"
         else:
             label = "Pendiente"

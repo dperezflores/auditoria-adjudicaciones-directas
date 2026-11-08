@@ -24,6 +24,8 @@ class AnalysisInterfaceTests(unittest.TestCase):
         self.assertEqual(code_from_filename("CONTRATO.pdf", PDF_MIME), "CONTRATO")
         self.assertEqual(CONTRACT_SCHEMA_V2, "contrato-v2")
         self.assertIn('"CONTRATO": CONTRACT_SCHEMA_V2', source)
+        self.assertIn('"CATALOGO": CATALOGO_SCHEMA_VERSION', source)
+        self.assertIn("result = import_or_reuse_catalogo(", source)
         self.assertIn('if code == "CONTRATO":', source)
         self.assertIn("result = extract_or_reuse_v2(", source)
         self.assertIn("CONTRATO-v2 (16 campos)", source)
@@ -36,7 +38,8 @@ class AnalysisInterfaceTests(unittest.TestCase):
         source = (
             Path(__file__).resolve().parents[1] / "ui" / "expedientes.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('if st.button(\n        f"Analizar', source)
+        self.assertIn('if st.button(\n        button_label,', source)
+        self.assertIn('f"Importar {len(batch)} catálogo(s) sin IA"', source)
         self.assertIn('st.session_state["ex_last_run"] = _analyze(', source)
 
 
