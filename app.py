@@ -47,14 +47,14 @@ with st.sidebar:
     st.divider()
     st.success("Datos ficticios en las vistas de demostración")
     st.write("Drive: credenciales preparadas, acceso aún no verificado" if drive_secrets_present else "Drive: pendiente de configuración")
-    st.write("Gemini: inactivo")
+    st.write("Gemini: preparado (solo prueba ficticia bajo confirmación)")
     st.write("Sheets: configurado" if storage_secrets_present else "Sheets: pendiente de configuración")
     st.divider()
     st.caption("Conexión Drive solo de lectura. No utilizar documentación confidencial en este piloto sin autorización institucional.")
 
 st.title("AuditorIA")
 st.caption("Revisión de adjudicaciones directas de obra pública")
-st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta metadatos y permite guardarlos en Google Sheets. No hay análisis con IA.")
+st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta metadatos y ofrece extracción con Gemini, únicamente para el contrato ficticio y tras confirmación.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Explorador demo", "Pruebas de auditoría", "Dashboard general", "Google Drive (piloto)"])
 
@@ -130,4 +130,4 @@ with tab3:
 with tab4:
     render_drive_explorer(access_granted)
 
-st.caption("AuditorIA · Piloto · Drive y registro de metadatos; Gemini todavía inactivo")
+st.caption("AuditorIA · Piloto · Sincronización documental y extracción con IA bajo demanda")
