@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Mapping, Sequence
 from uuid import uuid4
 
-from services.drive_service import DriveInventory
+from services.drive_service import DriveInventory, PDF_MIME, XLSX_MIME
 
 HEADERS = {
     "Obras": (
@@ -127,8 +127,16 @@ def build_plan(
         events.append((entity, eid, obra_id, kind, before, after))
 
     works = {w.id: w for w in inventory.works}
-    docs = {doc.id: (work.id, doc) for work in inventory.works for doc in work.pdfs}
-    if len(docs) != inventory.pdf_total or len(works) != len(inventory.works):
+    # Se registran PDFs y XLSX de catálogo en la misma tabla Documentos,
+    # conservando el nombre histórico de las métricas pdf_* para contar
+    # únicamente PDFs. Otros formatos permanecen fuera del registro.
+    supported = [
+        (work.id, doc)
+        for work in inventory.works
+        for doc in (*work.pdfs, *(f for f in work.other_files if f.mime_type == XLSX_MIME))
+    ]
+    docs = {doc.id: (obra_id, doc) for obra_id, doc in supported}
+    if len(docs) != len(supported) or len(works) != len(inventory.works):
         raise SchemaMismatch("IDs de Drive repetidos en el inventario actual.")
 
     current_doc_records: dict[str, dict[str, str]] = {}
@@ -137,14 +145,16 @@ def build_plan(
         checksum = doc.md5_checksum
         size = str(doc.size_bytes)
         if not prior:
-            new_pdfs += 1
+            if doc.mime_type == PDF_MIME:
+                new_pdfs += 1
             status = PENDING
             event("Documento", doc_id, obra_id, "Nuevo", "", doc.name)
         else:
             status = prior["estado_procesamiento"] or PENDING
             changed = _fingerprint_changed(prior, checksum, doc.modified_time, size)
             if changed:
-                modified_pdfs += 1
+                if doc.mime_type == PDF_MIME:
+                    modified_pdfs += 1
                 if status in PROCESSED:
                     status = MODIFIED
                 event("Documento", doc_id, obra_id, "Contenido modificado",
@@ -166,8 +176,13 @@ def build_plan(
             "documento_id": doc_id,
             "obra_id": obra_id,
             "nombre_archivo": doc.name,
-            "tipo_documental": prior["tipo_documental"] if prior else "",
-            "mime_type": "application/pdf",
+            # El código confirmado se invalida al cambiar los bytes o la
+            # obra propietaria; nunca se conserva sobre una versión distinta.
+            "tipo_documental": (
+                prior["tipo_documental"] if prior and not changed
+                and prior["obra_id"] == obra_id else ""
+            ),
+            "mime_type": doc.mime_type,
             "md5_checksum": checksum,
             "fecha_modificacion_drive": doc.modified_time,
             "tamano_bytes": size,
@@ -185,7 +200,8 @@ def build_plan(
 
     for doc_id, prior in existing["Documentos"].items():
         if doc_id not in docs and prior["activo"] == "SI":
-            removed_pdfs += 1
+            if prior["mime_type"] == PDF_MIME:
+                removed_pdfs += 1
             archived = {k: prior[k] for k in HEADERS["Documentos"]}
             archived["activo"] = "NO"
             archived["revision"] = str(int(prior["revision"] or 1) + 1)
