@@ -8,18 +8,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-import json
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from services.contract_portfolio import (
-    DATA_FIELDS, FIELD_LABELS, ContractRecord,
+    FIELD_LABELS, ContractRecord,
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
 )
 from services.sheets_service import create_sheets_client, storage_configured
 from services.contract_v2 import FIELD_LABELS_V2
+from services.contract_table import contract_table_rows
 
 
 def _fetch_portfolio() -> None:
@@ -34,39 +33,19 @@ def _fetch_portfolio() -> None:
 
 
 def _view_table(records: tuple[ContractRecord, ...]) -> pd.DataFrame:
-    return pd.DataFrame([
-        {
-            "Obra": r.values["nombre_obra"] or "Sin nombre extraído",
-            "Contrato": r.values["numero_contrato"] or "Sin número",
-            "Contratista": r.values["contratista"] or "No identificado",
-            "Monto del contrato": r.values["monto_con_iva"] or "No localizado",
-            "Anticipo": r.values["porcentaje_anticipo"] or "No localizado",
-            "Año de firma": r.signature_year,
-            "Campos": r.coverage,
-            "Estado": r.status_label,
-            "Régimen citado": r.normative_scope if r.full_values is not None else "Sin clasificar",
-        }
-        for r in records
-    ])
+    """Listado horizontal completo, con selección interactiva por fila."""
+    return pd.DataFrame(contract_table_rows(records))
 
 
 def _filtered_download(records: tuple[ContractRecord, ...]) -> bytes:
-    rows = [{
-        "obra_id": r.obra_id,
-        "documento_id": r.documento_id,
-        **{field: r.values[field] for field in DATA_FIELDS},
-        **{f"literal_{key}": (r.full_values or {}).get(key, "") for key, _ in FIELD_LABELS_V2},
-        "participantes_json": json.dumps(
-            list(r.participants), ensure_ascii=False
-        ),
-        "ambito_normativo_preliminar": r.normative_scope if r.full_values else "",
-        "esquema": r.source_schema,
-        "estado_extraccion": r.status_label,
-        "campos_recuperados": r.completeness,
-        "fecha_extraccion_utc": r.extracted_at,
-    } for r in records]
-    table = pd.DataFrame(rows)
-    return table.to_csv(index=False).encode("utf-8-sig")
+    # Exportación congruente con todas las columnas visibles del dashboard.
+    rows = contract_table_rows(records)
+    for record, row in zip(records, rows):
+        row["ID de obra"] = record.obra_id
+        row["ID de documento"] = record.documento_id
+        row["Versión de extracción"] = record.source_schema
+        row["Fecha de extracción (UTC)"] = record.extracted_at
+    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig")
 
 
 def _render_aggregate_visuals(records: tuple[ContractRecord, ...]) -> None:
@@ -143,8 +122,8 @@ def _render_details(record: ContractRecord) -> None:
         else:
             st.info(
                 "Este contrato fue extraído con una plantilla anterior. "
-                "Los campos nuevos no se deducirán: puedes elegir una extracción "
-                "ampliada en Expedientes cuando sea necesario."
+                "Los campos nuevos no se deducirán: puedes volver a analizar "
+                "el contrato en Expedientes con la versión actual cuando sea necesario."
             )
             st.dataframe(
                 pd.DataFrame([
@@ -312,7 +291,9 @@ def render_results() -> None:
     st.markdown("#### Listado de obras y contratos")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
-        "Selecciona una fila para consultar fechas, datos completos y evidencias."
+        "La tabla incluye los 16 campos contractuales y los participantes. "
+        "Desplázate horizontalmente para ver las demás columnas; selecciona "
+        "una fila para abrir su ficha."
     )
     if not filtered:
         st.info("Ningún contrato coincide con los filtros.")
@@ -327,11 +308,13 @@ def render_results() -> None:
         on_select="rerun",
         key="results_contract_table",
         column_config={
-            "Obra": st.column_config.TextColumn(width="large"),
-            "Contrato": st.column_config.TextColumn(width="medium"),
-            "Contratista": st.column_config.TextColumn(width="large"),
+            "Obra o servicio": st.column_config.TextColumn(width="large"),
+            "Número de contrato": st.column_config.TextColumn(width="medium"),
+            "Contratista (nombre o razón social)": st.column_config.TextColumn(width="large"),
             "Monto del contrato": st.column_config.TextColumn(width="medium"),
-            "Estado": st.column_config.TextColumn(width="medium"),
+            "Personas que participan en el contrato": st.column_config.TextColumn(width="large"),
+            "Legislación citada en el contrato": st.column_config.TextColumn(width="large"),
+            "Estado de extracción": st.column_config.TextColumn(width="medium"),
         },
     )
 
