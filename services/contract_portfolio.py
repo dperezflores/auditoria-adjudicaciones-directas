@@ -16,6 +16,10 @@ from typing import Any, Mapping, Sequence
 
 from services.sync_engine import HEADERS as INVENTORY_HEADERS
 from services.extraction_store import EXTRACTION_HEADERS, CONTRACT_HEADERS
+from services.contract_v2 import (
+    CONTRACT_V2_FIELDS, CONTRACT_V2_HEADERS, ContractExtractionV2,
+    classify_cited_regime,
+)
 
 
 class PortfolioError(ValueError):
@@ -38,6 +42,7 @@ HEADERS = {
     "Documentos": INVENTORY_HEADERS["Documentos"],
     "Extracciones": EXTRACTION_HEADERS,
     "DatosContrato": CONTRACT_HEADERS,
+    "DatosContratoV2": CONTRACT_V2_HEADERS,
 }
 
 
@@ -58,17 +63,32 @@ class ContractRecord:
     currency: str
     signature_year: str
     source_schema: str = "contrato-v1"
+    full_values: Mapping[str, str] | None = None
+    participants: tuple[Mapping[str, Any], ...] = ()
+    normative_scope: str = "No determinado"
 
     @property
     def missing_fields(self) -> tuple[str, ...]:
+        if self.full_values is not None:
+            return tuple(
+                name for name in CONTRACT_V2_FIELDS
+                if not self.full_values.get(name, "").strip()
+            )
         return tuple(name for name in DATA_FIELDS if not self.values.get(name, "").strip())
 
     @property
     def coverage(self) -> str:
-        return f"{self.completeness}/{len(DATA_FIELDS)}"
+        length = len(CONTRACT_V2_FIELDS) if self.full_values is not None else len(DATA_FIELDS)
+        return f"{self.completeness}/{length}"
 
     @property
     def status_label(self) -> str:
+        if self.source_schema == "contrato-v2":
+            return (
+                "Contrato ampliado · datos incompletos"
+                if self.completeness < len(CONTRACT_V2_FIELDS)
+                else "Contrato ampliado · pendiente de verificar"
+            )
         if self.source_schema == "documento-schema-v1":
             return (
                 "Contrato identificado · datos incompletos"
@@ -114,7 +134,7 @@ def _map_rows(name: str, values: Sequence[Sequence[Any]]) -> list[dict[str, str]
         identifier = row[expected[0]]
         if not identifier:
             raise PortfolioError(f"Identificador vacío en {name}.")
-        if name != "DatosContrato" and identifier in seen:
+        if name not in ("DatosContrato", "DatosContratoV2") and identifier in seen:
             raise PortfolioError(f"Identificador duplicado en {name}.")
         seen.add(identifier)
         result.append(row)
@@ -367,6 +387,87 @@ def prepare_contract_portfolio(
             currency=currency_group(values["monto_con_iva"]),
             signature_year=signature_year(values["fecha_firma"]),
         ))
+    # Nueva plantilla: datos literales y participantes almacenados en v2.
+    # La salida estructurada de v1 y fichas generales siguen disponibles.
+    current_v2: set[str] = set()
+    for row in parsed["DatosContratoV2"]:
+        doc_id, obra_id, key = row["documento_id"], row["obra_id"], row["cache_key"]
+        document = documents.get(doc_id)
+        if (
+            not document or document["obra_id"] != obra_id
+            or document["resultado_id"] != key
+            or document["estado_procesamiento"] == "Modificado desde el último análisis"
+            or document["mime_type"] != "application/pdf"
+        ):
+            continue
+        source = analyses.get(key)
+        if not source or (
+            source["version_esquema"] != "contrato-v2"
+            or source["estado"] != "COMPLETADO"
+            or not source["resultado_json"]
+            or source["documento_id"] != doc_id
+            or source["obra_id"] != obra_id
+        ):
+            continue
+        if doc_id in current_v2:
+            raise PortfolioError("Un PDF tiene varias filas contractuales v2 vigentes.")
+        try:
+            result = ContractExtractionV2.model_validate_json(source["resultado_json"])
+        except (ValueError, TypeError):
+            continue
+        raw = {name: row[name] for name in CONTRACT_V2_FIELDS}
+        # El JSON completo constituye el registro fuente; mantener idénticos
+        # los datos del listado a los valores literales entregados por Gemini.
+        if any(raw[name] != (getattr(result, name).valor or "") for name in CONTRACT_V2_FIELDS):
+            raise PortfolioError(
+                "Los datos del contrato v2 no coinciden con su extracción original."
+            )
+        legacy_view = {
+            "numero_contrato": raw["numero_contrato"],
+            "nombre_obra": raw["obra_servicio"],
+            "contratista": raw["contratista"],
+            "fecha_firma": raw["fecha_firma_contrato"],
+            "fecha_inicio": raw["fecha_inicio_contractual"],
+            "fecha_termino": raw["fecha_termino_contractual"],
+            "monto_con_iva": raw["monto_contrato"],
+            "porcentaje_anticipo": raw["anticipo"],
+        }
+        record_evidence = {
+            name: getattr(result, name).model_dump(mode="json")
+            for name in CONTRACT_V2_FIELDS
+        }
+        records.append(ContractRecord(
+            obra_id=obra_id, documento_id=doc_id, cache_key=key,
+            nombre_carpeta=works[obra_id]["nombre_carpeta"],
+            documento=document["nombre_archivo"],
+            values=legacy_view, evidence=record_evidence,
+            observations=tuple(result.observaciones),
+            state=source["estado"],
+            extracted_at=row["extraido_utc"] or source["actualizado_utc"],
+            completeness=sum(bool(v) for v in raw.values()),
+            amount=parse_amount(raw["monto_contrato"]),
+            currency=currency_group(raw["monto_contrato"]),
+            signature_year=signature_year(raw["fecha_firma_contrato"]),
+            source_schema="contrato-v2",
+            full_values=raw,
+            participants=tuple(
+                participant.model_dump(mode="json")
+                for participant in result.personas_participantes
+            ),
+            normative_scope=classify_cited_regime(raw["legislacion_citada"]),
+        ))
+        current_v2.add(doc_id)
+    records.sort(
+        key=lambda r: (r.signature_year, r.values["numero_contrato"], r.documento_id),
+        reverse=True,
+    )
+    # Si alguna extracción antigua aún sigue activa para el mismo PDF,
+    # el resultado v2 prevalece sin mostrar dos contratos.
+    if current_v2:
+        records = [
+            r for r in records
+            if r.documento_id not in current_v2 or r.source_schema == "contrato-v2"
+        ]
     # Algunos contratos reales tienen nombres abreviados como CNT_DIR_CNT.pdf.
     # El analizador general los reconoce por contenido y guarda en Extracciones,
     # pero no crea una fila en DatosContrato. Incorporar esos resultados sin
