@@ -21,6 +21,8 @@ from services.puc_schema import PUC_LABELS, PucExtractionV1
 from services.puc_store import extract_or_reuse_puc
 from services.dictamen_schema import DICTAMEN_LABELS, DictamenAdV1
 from services.dictamen_store import extract_or_reuse_dictamen
+from services.notificacion_schema import NOTIFICACION_LABELS, NotificacionAdV1
+from services.notificacion_store import extract_or_reuse_notificacion
 from services.analysis_deletion import delete_analysis
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
@@ -43,6 +45,7 @@ MAX_BATCH = 10
 ENABLED_EXTRACTORS = {
     "PUC": "puc-v1",
     "DICTAMEN_AD": "dictamen-ad-v1",
+    "NOTIFICACION_AD": "notificacion-ad-v1",
 }
 
 
@@ -239,6 +242,82 @@ def _summarize_saved(
                 )
             except Exception:
                 st.warning("El dictamen guardado no pudo interpretarse con el esquema v1.")
+        elif old["version_esquema"] == "notificacion-ad-v1":
+            try:
+                report = NotificacionAdV1.model_validate_json(old["resultado_json"])
+                st.markdown("#### Datos extraídos de la notificación de adjudicación")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Campo": label,
+                        "Texto literal": getattr(report, key).valor or "No localizado",
+                        "Página": getattr(report, key).pagina,
+                        "Evidencia": getattr(report, key).evidencia or "Sin evidencia",
+                    }
+                    for key, label in NOTIFICACION_LABELS
+                ]), hide_index=True, use_container_width=True)
+
+                st.markdown("#### Personal designado en la notificación")
+                if report.supervisores:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Función": x.funcion,
+                            "Nombre": x.nombre,
+                            "Cargo": x.cargo or "—",
+                            "PUC del supervisor": x.registro_puc or "—",
+                            "Página": x.pagina,
+                            "Evidencia": x.evidencia or "—",
+                        } for x in report.supervisores
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se identificaron supervisores o coordinadores.")
+
+                st.markdown("#### Obligaciones y plazos comunicados")
+                if report.obligaciones:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Obligación literal": x.obligacion,
+                            "Plazo literal": x.plazo_literal or "No indicado",
+                            "Inicio del plazo": x.evento_inicio_plazo or "No indicado",
+                            "Condición": x.condicion or "—",
+                            "Destinatario": x.destinatario or "—",
+                            "Fundamento citado": x.fundamento_citado or "—",
+                            "Página": x.pagina, "Evidencia": x.evidencia or "—",
+                        } for x in report.obligaciones
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se extrajeron obligaciones expresas.")
+
+                with st.expander("Fundamentos jurídicos citados"):
+                    if report.fundamentos:
+                        st.dataframe(pd.DataFrame([
+                            {
+                                "Norma": x.norma or "—",
+                                "Artículos": x.articulos or "—",
+                                "Página": x.pagina,
+                                "Evidencia": x.evidencia or "—",
+                            } for x in report.fundamentos
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No se extrajeron fundamentos expresos.")
+                acuse = report.acuse_aparente
+                st.markdown("#### Acuse aparente")
+                st.write(
+                    f"**Presencia:** {acuse.presencia} · "
+                    f"**Fecha de recepción legible:** {acuse.fecha_legible or 'No localizada'}"
+                )
+                st.caption(acuse.nota_visual or "Sin nota visual adicional")
+                if report.observaciones:
+                    with st.expander("Advertencias documentales"):
+                        for note in report.observaciones:
+                            st.write("• " + note)
+                st.caption(
+                    "La fecha de emisión no sustituye a la de recepción. "
+                    "No se calculan fechas límite ni se verifica cumplimiento."
+                )
+            except Exception:
+                st.warning(
+                    "La notificación guardada no pudo interpretarse con el esquema v1."
+                )
         elif old["version_esquema"] == "contrato-v1":
             try:
                 parsed = ExtraccionContrato.model_validate_json(old["resultado_json"])
@@ -306,6 +385,12 @@ def _analyze(
                     )
                 elif code == "DICTAMEN_AD":
                     result = extract_or_reuse_dictamen(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        model=model,
+                    )
+                elif code == "NOTIFICACION_AD":
+                    result = extract_or_reuse_notificacion(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
                         pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
@@ -540,7 +625,8 @@ def render_expedientes(authenticated: bool) -> None:
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
-        "Extractores disponibles: **PUC-v1** y **DICTAMEN_AD-v1**. "
+        "Extractores disponibles: **PUC-v1**, **DICTAMEN_AD-v1** y "
+        "**NOTIFICACION_AD-v1**. "
         "La extracción comienza solo al pulsar Analizar; otros documentos "
         "no se enviarán a Gemini hasta habilitar su esquema especializado."
     )
@@ -602,7 +688,7 @@ def render_expedientes(authenticated: bool) -> None:
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
-    # Solo PUC y DICTAMEN_AD llegan a Gemini; el resto se omite.
+    # Solo tres tipos con extractor propio llegan a Gemini.
     eligible = [
         d for d in chosen
         if code_from_filename(d.name, d.mime_type) in ENABLED_EXTRACTORS
@@ -666,7 +752,10 @@ def render_expedientes(authenticated: bool) -> None:
 
     gemini = st.secrets.get("gemini", {})
     model = gemini.get("model") or DEFAULT_MODEL
-    st.caption(f"Modelo Gemini: {model} · Extractores: PUC-v1 y DICTAMEN_AD-v1")
+    st.caption(
+        f"Modelo Gemini: {model} · "
+        "Extractores: PUC-v1, DICTAMEN_AD-v1 y NOTIFICACION_AD-v1"
+    )
     disabled = not batch or not gemini.get("api_key")
     if st.button(
         f"Analizar {len(batch)} documento(s) con IA",
