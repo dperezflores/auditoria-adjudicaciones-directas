@@ -13,6 +13,8 @@ from typing import Any
 from uuid import uuid4
 
 from services.contract_v2 import CONTRACT_V2_HEADERS
+from services.catalogo_xlsx import CATALOGO_HEADERS
+from services.catalogo_store import load_catalog_rows
 from services.dictamen_schema import DICTAMEN_HEADERS
 from services.notificacion_schema import NOTIFICACION_HEADERS
 from services.orden_schema import ORDEN_HEADERS
@@ -98,7 +100,7 @@ def delete_analysis(
     doc: DocumentRecord, obra_id: str, *,
     expected_result_id: str, actor_email: str,
 ) -> DeleteOutcome:
-    """Eliminar todos los análisis asociados a un PDF, nunca el PDF físico.
+    """Eliminar los análisis de un PDF o Excel, nunca el archivo en Drive.
 
     Un único spreadsheets.batchUpdate realiza las eliminaciones y registra
     el evento en Historial. Si el archivo cambió, falla antes de escribir.
@@ -135,6 +137,18 @@ def delete_analysis(
                 selected.append((i, item))
         to_remove[tab] = selected
 
+    if registered[3] == "CATALOGO":
+        catalog_rows = load_catalog_rows(client, spreadsheet_id)
+        selected = []
+        for index, item in enumerate(catalog_rows, start=2):
+            if item[2] == doc.id:
+                if item[1] != obra_id:
+                    raise ExtractionStateError(
+                        "El catálogo presenta filas vinculadas a otra obra."
+                    )
+                selected.append((index, item))
+        to_remove["DatosCatalogo"] = selected
+
     attempts = to_remove["Extracciones"]
     if any(row[1] == "EN_PROCESO" for _, row in attempts):
         raise ExtractionStateError(
@@ -151,6 +165,10 @@ def delete_analysis(
         for row in tables[tab]:
             if row[0] in keys and (row[2], row[1]) != (doc.id, obra_id):
                 raise ExtractionStateError("La clave de caché se usa en otro documento.")
+    if "DatosCatalogo" in to_remove:
+        for _, item in to_remove["DatosCatalogo"]:
+            if item[0] not in keys:
+                raise ExtractionStateError("Hay filas de catálogo ajenas a las extracciones.")
     for row in tables["RevisionesContrato"]:
         if row[4] in keys and (row[3], row[2]) != (doc.id, obra_id):
             raise ExtractionStateError("Hay una revisión vinculada a otro documento.")
@@ -167,13 +185,14 @@ def delete_analysis(
     sheet_ids: dict[str, int] = {}
     for item in meta.get("sheets") or []:
         prop = item.get("properties") or {}
-        if prop.get("title") in _TABLES:
-            sheet_ids[prop["title"]] = int(prop["sheetId"])
-            if int((prop.get("gridProperties") or {}).get("columnCount", 0)) < len(
-                _TABLES[prop["title"]]
-            ):
+        title = prop.get("title")
+        if title in _TABLES or (title == "DatosCatalogo" and "DatosCatalogo" in to_remove):
+            sheet_ids[title] = int(prop["sheetId"])
+            expected_width = len(CATALOGO_HEADERS) if title == "DatosCatalogo" else len(_TABLES[title])
+            if int((prop.get("gridProperties") or {}).get("columnCount", 0)) < expected_width:
                 raise ExtractionStateError("La pestaña tiene menos columnas de las esperadas.")
-    if set(sheet_ids) != set(_TABLES):
+    required = set(_TABLES) | ({"DatosCatalogo"} if "DatosCatalogo" in to_remove else set())
+    if set(sheet_ids) != required:
         raise ExtractionStateError("La estructura de Sheets cambió; no se eliminó nada.")
 
     values = lambda items: [{"userEnteredValue": {"stringValue": str(x)}} for x in items]
