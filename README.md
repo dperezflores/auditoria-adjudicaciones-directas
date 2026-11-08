@@ -96,13 +96,18 @@ No se vuelve a llamar a Gemini ni se mezclan documentos de obras distintas.
 [Guía del cruce documental](docs/CRUCE_DOCUMENTAL_CONTRATO_PUC.md).
 
 
-## Etapa 1 — Identificación documental (sin IA)
+## Etapa 1 — Clasificación automática de documentos por nombre
 
-La aplicación ahora sugiere y verifica por contenido los códigos `CONTRATO`,
-`PUC`, `CATALOGO`, `DICTAMEN_AD`, `NOTIFICACION_AD` y `ORDEN_AD`.
-La verificación es manual, bajo demanda, sin Gemini. Los códigos confirmados
-se conservan en la hoja `Documentos`; `CATALOGO.xlsx` también queda
-registrado. El análisis Gemini está temporalmente pausado para impedir
-que se aplique el extractor contractual a otros tipos documentales.
+Al sincronizar Google Drive, AuditorIA asigna directamente los códigos
+`CONTRATO`, `PUC`, `CATALOGO`, `DICTAMEN_AD`, `NOTIFICACION_AD` y
+`ORDEN_AD` según el nombre estándar y su extensión. No verifica el
+contenido del documento, no requiere confirmación manual y no utiliza
+Gemini en esta etapa. Los documentos con nombres no reconocidos se muestran
+como `POR_IDENTIFICAR`.
 
-[Instrucciones de esta etapa](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
+El tipo asignado se guarda en `Documentos.tipo_documental` durante
+**Actualizar Google Drive**; la pantalla de verificación por contenido fue
+retirada. El análisis de IA sigue temporalmente pausado hasta disponer
+de extractores específicos para cada tipo documental.
+
+[Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
