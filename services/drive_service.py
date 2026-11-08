@@ -34,6 +34,8 @@ class DocumentRecord:
     md5_checksum: str = ""
     size_bytes: int = 0
     url: str = ""
+    parent_id: str = ""
+    relative_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,18 +127,42 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
         if folder.get("mimeType") != FOLDER_MIME:
             continue
         pdfs = []
-        for item in _list_children(service, folder["id"]):
-            if item.get("mimeType") != PDF_MIME:
+        # Explorar también subcarpetas de expediente (p. ej. PUC, Contratos,
+        # Dictámenes) sin salir del directorio de la obra autorizada.
+        pending = [(folder["id"], "", 0)]
+        seen_folders: set[str] = set()
+        seen_files: set[str] = set()
+        while pending:
+            parent_id, relative, depth = pending.pop()
+            if parent_id in seen_folders:
                 continue
-            pdfs.append(DocumentRecord(
-                id=item["id"],
-                name=item.get("name", "Sin nombre"),
-                modified_time=item.get("modifiedTime") or "",
-                md5_checksum=item.get("md5Checksum") or "",
-                size_bytes=int(item.get("size") or 0),
-                url=item.get("webViewLink") or "",
-            ))
-        pdfs.sort(key=lambda f: (f.name.casefold(), f.id))
+            seen_folders.add(parent_id)
+            if depth > 6 or len(seen_folders) > 1500:
+                raise DriveConnectionError("El expediente excede la profundidad o cantidad permitida.")
+            for item in _list_children(service, parent_id):
+                if item.get("mimeType") == FOLDER_MIME:
+                    pending.append((
+                        item["id"],
+                        f"{relative}/{item.get('name', 'Subcarpeta')}".lstrip("/"),
+                        depth + 1,
+                    ))
+                    continue
+                if item.get("mimeType") != PDF_MIME or item["id"] in seen_files:
+                    continue
+                seen_files.add(item["id"])
+                if len(seen_files) > 3000:
+                    raise DriveConnectionError("Hay demasiados PDF en una sola obra.")
+                pdfs.append(DocumentRecord(
+                    id=item["id"],
+                    name=item.get("name", "Sin nombre"),
+                    modified_time=item.get("modifiedTime") or "",
+                    md5_checksum=item.get("md5Checksum") or "",
+                    size_bytes=int(item.get("size") or 0),
+                    url=item.get("webViewLink") or "",
+                    parent_id=parent_id,
+                    relative_path=relative,
+                ))
+        pdfs.sort(key=lambda f: (f.relative_path.casefold(), f.name.casefold(), f.id))
         works.append(WorkRecord(
             id=folder["id"],
             name=folder.get("name") or "Obra sin nombre",
@@ -152,7 +178,7 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
     )
 
 
-MAX_PILOT_PDF_BYTES = 8 * 1024 * 1024
+MAX_PILOT_PDF_BYTES = 20 * 1024 * 1024
 
 
 def download_verified_pdf(
@@ -170,15 +196,35 @@ def download_verified_pdf(
         fields="id,name,mimeType,size,md5Checksum,parents,trashed",
         supportsAllDrives=True,
     ).execute()
+    parent_id = validate_id(doc.parent_id or expected_folder_id)
     if (
         metadata.get("trashed")
         or metadata.get("mimeType") != PDF_MIME
-        or expected_folder_id not in metadata.get("parents", [])
+        or parent_id not in metadata.get("parents", [])
     ):
         raise DriveConnectionError("El PDF ya no pertenece a la carpeta seleccionada.")
+    if parent_id != expected_folder_id:
+        # Verificar la cadena de padres en Drive EN EL MOMENTO DE LEER,
+        # no solo confiar en una ruta obtenida del inventario antiguo.
+        current = parent_id
+        for _ in range(7):
+            ancestor = service.files().get(
+                fileId=current, fields="id,mimeType,parents,trashed",
+                supportsAllDrives=True,
+            ).execute()
+            if ancestor.get("trashed") or ancestor.get("mimeType") != FOLDER_MIME:
+                raise DriveConnectionError("La subcarpeta ya no es válida.")
+            ancestors = ancestor.get("parents") or []
+            if expected_folder_id in ancestors:
+                break
+            if not ancestors:
+                raise DriveConnectionError("El PDF no pertenece a la obra autorizada.")
+            current = validate_id(ancestors[0])
+        else:
+            raise DriveConnectionError("No se pudo verificar la ruta de la subcarpeta.")
     size = int(metadata.get("size") or 0)
     if not 0 < size <= MAX_PILOT_PDF_BYTES:
-        raise DriveConnectionError("El PDF excede el límite de 8 MB del piloto.")
+        raise DriveConnectionError("El PDF supera el límite operativo de 20 MB.")
     if metadata.get("md5Checksum") != doc.md5_checksum:
         raise DriveConnectionError("El PDF cambió desde la última consulta. Actualiza Drive.")
     result = service.files().get_media(fileId=doc.id).execute()
