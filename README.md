@@ -3,12 +3,12 @@
 Piloto para la revisión documental y pruebas de auditoría de adjudicación directa de obra pública en Guanajuato.
 
 ## Estado actual
-**Etapa 2: extracción de `PUC.pdf` con Gemini bajo demanda.**
+**Etapa 3: extracción especializada de PUC y DICTAMEN_AD bajo demanda.**
 Google Drive y Google Sheets están conectados, la clasificación documental
 se realiza por nombre y se guarda en la hoja maestra. El extractor
 `PUC-v1` obtiene 18 campos literales y la lista de especialidades,
 con página y evidencia, en `DatosPUC` y `Extracciones`.
-Los demás tipos documentales aún no pueden analizarse desde Expedientes.
+PUC y DICTAMEN_AD tienen extractores independientes; los demás tipos permanecen pendientes.
 
 ## Objetivo
 1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
@@ -111,15 +111,25 @@ como `POR_IDENTIFICAR`.
 
 El tipo asignado se guarda en `Documentos.tipo_documental` durante
 **Actualizar Google Drive**; la pantalla de verificación por contenido fue
-retirada. El análisis de IA sigue temporalmente pausado hasta disponer
-de extractores específicos para cada tipo documental.
+retirada. La IA solo se ejecuta bajo demanda para PUC y DICTAMEN_AD; el resto
+permanece sin extractor especializado.
 
 [Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
 
 ## Etapa 2 — PUC-v1
 
-La interfaz permite analizar exclusivamente `PUC.pdf` de una obra,
+La interfaz permite analizar `PUC.pdf` de una obra,
 reutilizar la caché y consultar capital contable, fechas PUC, representación
 técnica y especialidades. Esto **no determina todavía cumplimiento** ni
-realiza cruces automáticos. Los documentos no PUC nunca se envían al
-extractor de PUC. [Guía para probar](docs/ETAPA_02_EXTRACCION_PUC.md).
+realiza cruces automáticos. Los dictámenes nunca se envían al extractor de PUC: usan su propio
+esquema DICTAMEN_AD-v1. [Guía para probar](docs/ETAPA_02_EXTRACCION_PUC.md).
+
+
+## Etapa 3 — DICTAMEN_AD-v1
+
+El extractor `DICTAMEN_AD-v1` guarda 19 campos literales y listas de
+fundamentos jurídicos, motivaciones, soportes citados y firma aparente.
+Se almacenan en `DatosDictamenAD` y `Extracciones`, sin alterar
+`DatosPUC`. Las afirmaciones del dictamen no se consideran acreditadas:
+**todavía no se ejecutan pruebas de cumplimiento ni cruces legales**.
+[Guía de prueba](docs/ETAPA_03_EXTRACCION_DICTAMEN_AD.md).
