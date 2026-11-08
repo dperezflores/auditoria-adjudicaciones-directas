@@ -79,7 +79,15 @@ def suggest_kind(name: str) -> str:
     """Elección orientativa editable en la interfaz; no determina cumplimiento."""
     raw = unicodedata.normalize("NFKD", name).casefold()
     name_plain = "".join(c for c in raw if not unicodedata.combining(c))
-    if "contrato" in name_plain and "convenio" not in name_plain:
+    if "convenio" in name_plain:
+        return "documental"
+    if "contrato" in name_plain:
+        return "contrato"
+    # Convenciones frecuentes de expedientes municipales: CNT_DIR_CNT.pdf,
+    # CONTR_DIR.pdf, etc. No confundir con PUC o dictámenes.
+    import re
+    stem = name_plain.rsplit(".", 1)[0]
+    if re.match(r"^(?:cnt|contr)[_ -](?:dir|ad|obra|contr|cnt)(?:[_ -]|$)", stem):
         return "contrato"
     return "documental"
 
