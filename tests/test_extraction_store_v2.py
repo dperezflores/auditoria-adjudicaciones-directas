@@ -109,7 +109,7 @@ class StoreV2Tests(unittest.TestCase):
         self.doc = DocumentRecord(id=DOC, name="CONTRATO.pdf", md5_checksum="abc")
         self.calls = 0
 
-    def run(self, invoke=None):
+    def do_extract(self, invoke=None):
         if invoke is None:
             def invoke(pdf, key, *, model):
                 self.calls += 1
@@ -120,7 +120,7 @@ class StoreV2Tests(unittest.TestCase):
         )
 
     def test_writes_v2_without_touching_legacy_contracts(self):
-        output = self.run()
+        output = self.do_extract()
         self.assertFalse(output.cached)
         self.assertEqual(self.calls, 1)
         self.assertEqual(self.sheet.v.ex[1][1], "COMPLETADO")
