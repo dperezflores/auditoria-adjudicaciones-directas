@@ -21,6 +21,7 @@ from services.puc_schema import PUC_LABELS, PucExtractionV1
 from services.puc_store import extract_or_reuse_puc
 from services.dictamen_schema import DICTAMEN_LABELS, DictamenAdV1
 from services.dictamen_store import extract_or_reuse_dictamen
+from services.analysis_deletion import delete_analysis
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
@@ -355,6 +356,78 @@ def _analyze(
     return log
 
 
+def _render_delete_analysis(
+    doc: DocumentRecord, obra: WorkRecord,
+    tables: dict[str, list[dict[str, str]]],
+) -> None:
+    """Eliminar exclusivamente los resultados del PDF elegido, nunca su archivo."""
+    registered = next(
+        (row for row in tables["Documentos"] if row["documento_id"] == doc.id),
+        None,
+    )
+    attempts = [
+        row for row in tables["Extracciones"]
+        if row["documento_id"] == doc.id and row["obra_id"] == obra.id
+    ]
+    if not registered or (
+        not attempts and not registered["resultado_id"]
+        and registered["estado_procesamiento"] == "Pendiente"
+    ):
+        return
+    with st.expander("Eliminar análisis guardado de este archivo"):
+        st.warning(
+            "La eliminación retirará las extracciones, datos derivados y "
+            "revisiones asociadas a este PDF. **No eliminará el documento "
+            "de Google Drive ni otros archivos de la obra.** "
+            "Un nuevo análisis con Gemini podrá generar consumo adicional."
+        )
+        st.caption(
+            f"Documento: {doc.name} · Solicitudes asociadas: {len(attempts)}"
+        )
+        confirm_key = f"ex_delete_confirm_{doc.id}"
+        typed = st.text_input(
+            "Para confirmar, escribe ELIMINAR",
+            key=confirm_key, placeholder="ELIMINAR",
+        )
+        if st.button(
+            "Eliminar análisis de este documento",
+            key=f"ex_delete_button_{doc.id}",
+            disabled=typed != "ELIMINAR",
+            type="secondary",
+        ):
+            try:
+                with get_writer_lock():
+                    sheets = create_sheets_client(
+                        st.secrets["gcp_service_account"]
+                    )
+                    result = delete_analysis(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        doc, obra.id,
+                        expected_result_id=registered["resultado_id"],
+                        actor_email=st.user.email,
+                    )
+                    st.session_state["ex_status_tables"] = load_status_tables(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                    )
+                st.session_state.pop("ex_last_run", None)
+                st.session_state.pop(confirm_key, None)
+                st.session_state["ex_delete_success"] = (
+                    f"Análisis eliminado de {doc.name}. "
+                    "El archivo sigue en Drive y puede volver a analizarse "
+                    "con el extractor habilitado."
+                )
+                st.rerun()
+            except ExtractionStateError as exc:
+                st.error(
+                    "No se completó la eliminación: " + str(exc)
+                )
+            except Exception:
+                st.error(
+                    "No se pudo confirmar el borrado. Comprueba Google Sheets "
+                    "antes de intentarlo nuevamente."
+                )
+
+
 def render_expedientes(authenticated: bool) -> None:
     st.title("Expedientes de obra")
     st.caption(
@@ -611,6 +684,8 @@ def render_expedientes(authenticated: bool) -> None:
 
     st.divider()
     st.markdown("### Consultar análisis guardado")
+    if st.session_state.get("ex_delete_success"):
+        st.success(st.session_state.pop("ex_delete_success"))
     preview_id = st.selectbox(
         "Documento",
         doc_ids, format_func=doc_names.get, key=f"ex_preview_{obra.id}",
@@ -619,6 +694,9 @@ def render_expedientes(authenticated: bool) -> None:
     current_state = file_states(inventory, st.session_state["ex_status_tables"])[preview.id]
     st.write(f"**Estado:** {current_state.label} · {current_state.detail}")
     _summarize_saved(preview, st.session_state["ex_status_tables"], current_state)
+    _render_delete_analysis(
+        preview, obra, st.session_state["ex_status_tables"],
+    )
     if re.fullmatch(r"[A-Za-z0-9_-]{10,}", preview.id):
         st.link_button(
             "Ver PDF en Drive",
