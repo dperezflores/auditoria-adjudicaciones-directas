@@ -89,8 +89,9 @@ else:
     st.title("Pruebas de adjudicación directa")
     st.caption("El motor de pruebas normativas se incorporará a esta vista.")
     st.info(
-        "Actualmente se está validando la identificación documental sin Gemini. "
-        "Los extractores especializados se activarán por etapas. Las pruebas "
+        "La identificación documental se realiza por nombre y ya está "
+        "disponible el extractor PUC-v1 bajo demanda en Expedientes. "
+        "Los demás extractores se activarán por etapas. Las pruebas "
         "de capital contable, especialidad, vigencia "
         "del PUC, responsable técnico y secuencia de fechas requieren reglas "
         "y evidencias específicas que implementaremos posteriormente."
