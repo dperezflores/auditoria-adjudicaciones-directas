@@ -54,6 +54,6 @@ El módulo `services/drive_service.py` lista carpetas y metadatos PDF con la cue
 
 Sigue [la guía de registro persistente](docs/REGISTRO_PERSISTENTE_SHEETS.md) para añadir a Streamlit Secrets el ID de la hoja ya creada. **Nunca compartas las claves privadas de la cuenta de servicio.**
 
-## Etapa Gemini (preparación, sin llamadas a IA)
+## Etapa Gemini: extracción de contrato ficticio bajo demanda
 
-Ya se han publicado el esquema Pydantic con evidencia por campo, el prompt versionado y una clave determinista de caché por SHA-256 de contenido. Estos módulos **no ejecutan ni facturan Gemini**. Lee [la guía de extracción de contratos](docs/EXTRACCION_CONTRATOS_GEMINI.md) para ver el alcance, controles de privacidad y configuración futura de AI Studio.
+La integración de Gemini está programada para la **prueba exclusiva con el contrato ficticio**, bajo pulsación y confirmación del usuario. El análisis comprueba la caché persistente en Google Sheets antes de enviar el PDF. En ausencia de resultados, reserva un registro e invoca el modelo configurado en Streamlit Secrets. Las pestañas `Extracciones` y `DatosContrato` conservan los resultados. Gemini no se ejecuta automáticamente al sincronizar Drive. Consulta [el manual de la primera prueba de Gemini](docs/PRUEBA_GEMINI_CONTRATO.md).
