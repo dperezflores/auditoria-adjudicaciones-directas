@@ -613,9 +613,9 @@ def _render_delete_analysis(
     with st.expander("Eliminar análisis guardado de este archivo"):
         st.warning(
             "La eliminación retirará las extracciones, datos derivados y "
-            "revisiones asociadas a este PDF. **No eliminará el documento "
+            "revisiones asociadas a este documento. **No eliminará el archivo "
             "de Google Drive ni otros archivos de la obra.** "
-            "Un nuevo análisis con Gemini podrá generar consumo adicional."
+            "Un nuevo análisis PDF con Gemini podría generar consumo; Excel se importa sin IA."
         )
         st.caption(
             f"Documento: {doc.name} · Solicitudes asociadas: {len(attempts)}"
@@ -721,7 +721,7 @@ def render_expedientes(authenticated: bool) -> None:
         work for work in inventory.works
         if (
             not search or search in work.name.casefold()
-            or any(search in f.name.casefold() for f in work.pdfs)
+            or any(search in f.name.casefold() for f in (*work.pdfs, *work.other_files))
         )
         and (filter_status == "Todos" or folders[work.id].label == filter_status)
     ]
@@ -730,7 +730,7 @@ def render_expedientes(authenticated: bool) -> None:
     for work in visible:
         fs = folders[work.id]
         with st.expander(
-            f"📁 {work.name}  ·  {fs.label}  ·  {fs.complete}/{fs.total} PDF analizados",
+            f"📁 {work.name}  ·  {fs.label}  ·  {fs.complete}/{fs.total} documentos procesados",
             expanded=len(visible) == 1,
         ):
             docs = [
@@ -896,6 +896,7 @@ def render_expedientes(authenticated: bool) -> None:
         saved = extractions.get(row["resultado_id"])
         if (
             saved and saved["version_esquema"] == schema
+            and states[doc.id].label == "Analizado"
             and saved["estado"] == "COMPLETADO" and saved["resultado_json"]
             and saved["documento_id"] == doc.id and saved["obra_id"] == obra.id
         ):
