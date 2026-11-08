@@ -12,7 +12,7 @@ from services.extraction_store import (
 from services.gemini_service import GeminiResult
 from services.gemini_errors import GeminiRequestError
 from services.extraction_cache import crear_clave_cache
-from services.contract_prompt import PROMPT_VERSION
+from services.extraction_store import PROMPT_VERSION
 from services.contract_schema import SCHEMA_VERSION
 
 
