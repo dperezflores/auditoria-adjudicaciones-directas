@@ -365,6 +365,12 @@ def render_results() -> None:
         a.metric("Conceptos contratados", summary["conceptos_originales"])
         b.metric("Conceptos fuera de catálogo excluidos", summary["excluidos_fuera_catalogo"])
         c.metric("Importe inicial calculado sin IVA", summary["importe_original_calculado_sin_iva"])
+        if summary.get("claves_repetidas", 0):
+            st.info(
+                f"{summary['claves_repetidas']} clave(s) utilizadas en "
+                f"{summary['renglones_con_clave_repetida']} renglones. "
+                "Se mantuvieron por capítulo y fila de origen."
+            )
         st.caption("Fuente: CATALOGO.xlsx · Cantidad Inicial × Precio U. "
                    "No se incluyen excedentes ni conceptos extraordinarios. "
                    "Consultar detalle y filas en Expedientes.")

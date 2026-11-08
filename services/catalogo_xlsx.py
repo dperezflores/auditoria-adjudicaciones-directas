@@ -189,7 +189,6 @@ def parse_catalogo_xlsx(raw: bytes) -> CatalogoResult:
     concepts: list[ConceptoCatalogo] = []
     outside_count = zero_count = with_excess = 0
     matched: list[str] = []
-    used_keys: set[str] = set()
     for name, rows in _load_sheets(raw):
         headers = next(((idx, mapping) for idx, (number, cells) in enumerate(rows[:100])
                         if (mapping := _headers(cells)) is not None), None)
@@ -237,10 +236,10 @@ def parse_catalogo_xlsx(raw: bytes) -> CatalogoResult:
             if not unit_price_text:
                 raise CatalogoFormatError(f"Falta Precio U. en {name}, fila {number}.")
             unit_price = _number(unit_price_text, positive=True)
-            key = first.casefold()
-            if key in used_keys:
-                raise CatalogoFormatError(f"Clave contractual duplicada: {first}.")
-            used_keys.add(key)
+            # Las claves de APU son códigos de concepto, no IDs de renglón:
+            # una misma clave puede utilizarse en varios capítulos o incluso
+            # más de una vez dentro del mismo capítulo con cantidades distintas.
+            # Cada registro se identifica por la hoja y la fila del XLSX.
             # Leer el excedente solo para el resumen; NO incorporarlo al importe.
             extra_idx = next((i for i, value in rows[header_idx][1].items()
                               if _norm(value) == "excedente"), None)

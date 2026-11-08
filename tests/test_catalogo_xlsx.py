@@ -71,6 +71,27 @@ class CatalogoXlsxTests(unittest.TestCase):
         self.assertEqual(result.originales_con_excedente, 1)
         self.assertEqual(result.excluidos_fuera_catalogo, 1)
 
+    def test_same_clave_in_same_and_other_chapters_preserves_all_rows(self):
+        rows = sample()
+        rows.insert(5, [
+            "C.00.0001", "Excavación", "M3", 2, 0, 2, 120.50, 241,
+        ])
+        rows.insert(7, ["CAPÍTULO: 2 ANDADOR"])
+        rows.insert(8, [
+            "C.00.0001", "Excavación", "M3", 5, 0, 5, 120.50, 602.50,
+        ])
+        result = parse_catalogo_xlsx(workbook(rows))
+        self.assertEqual(len(result.conceptos), 4)
+        reused = [c for c in result.conceptos if c.clave == "C.00.0001"]
+        self.assertEqual(len(reused), 3)
+        self.assertEqual([c.cantidad_original for c in reused], ["10", "2", "5"])
+        self.assertEqual([c.importe_original for c in reused],
+                         ["1205.00", "241.00", "602.50"])
+        self.assertEqual(len({(c.hoja, c.fila) for c in reused}), 3)
+        self.assertNotEqual(reused[0].capitulo, reused[2].capitulo)
+        self.assertEqual(result.total_original, "2273.50")
+        self.assertEqual(result.excluidos_fuera_catalogo, 1)
+
     def test_does_not_import_additional_budget_even_when_initial_is_positive(self):
         rows = sample()[:-1] + [
             ["PRESUPUESTO: 1 ADICIONAL"],

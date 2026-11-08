@@ -77,6 +77,31 @@ class CatalogoStoreTests(unittest.TestCase):
         self.assertEqual(len(self.saved_catalog), 2)
         self.assertEqual(len(self.tables["Extracciones"]), 1)
 
+    def test_repeated_clave_keeps_separate_sheets_rows_and_reuses_cache(self):
+        rows = sample()
+        rows.insert(5, [
+            "C.00.0001", "Excavación", "M3", 2, 0, 2, 120.50, 241,
+        ])
+        rows.insert(7, ["CAPÍTULO: 2 ANDADOR"])
+        rows.insert(8, [
+            "C.00.0001", "Excavación", "M3", 5, 0, 5, 120.50, 602.50,
+        ])
+        self.raw = workbook(rows)
+        first = self._process()
+        self.assertFalse(first.cached)
+        same_key = [r for r in self.saved_catalog if r[6] == "C.00.0001"]
+        self.assertEqual(len(same_key), 3)
+        self.assertEqual([r[9] for r in same_key], ["10", "2", "5"])
+        self.assertEqual(len({(r[3], r[4]) for r in same_key}), 3)
+        import json
+        summary = json.loads(self.tables["Extracciones"][0][10])
+        self.assertEqual(summary["claves_repetidas"], 1)
+        self.assertEqual(summary["renglones_con_clave_repetida"], 3)
+        self.assertEqual(summary["importe_original_calculado_sin_iva"], "2273.50")
+        again = self._process()
+        self.assertTrue(again.cached)
+        self.assertEqual(len(self.saved_catalog), 4)
+
     def test_invalid_xlsx_does_not_create_pending_extraction(self):
         with self.assertRaises(ExtractionStateError):
             self._process(invalid=True)
