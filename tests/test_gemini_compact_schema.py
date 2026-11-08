@@ -94,6 +94,18 @@ class CompactGeminiTests(unittest.TestCase):
     def test_new_version_invalidates_previous_cache(self):
         self.assertEqual(PROMPT_VERSION, "contrato-prompt-v3")
 
+    def test_offline_genai_sdk_accepts_compact_response_json_schema(self):
+        # Instancia del SDK local, sin cliente ni conexión ni generación.
+        from google.genai import types
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_json_schema=GEMINI_COMPACT_SCHEMA,
+        )
+        self.assertEqual(config.response_mime_type, "application/json")
+        self.assertEqual(config.response_json_schema, GEMINI_COMPACT_SCHEMA)
+        self.assertIsNone(config.response_schema)
+
     def test_only_compact_schema_is_sent_to_provider(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "services" / "gemini_service.py").read_text(encoding="utf-8")
