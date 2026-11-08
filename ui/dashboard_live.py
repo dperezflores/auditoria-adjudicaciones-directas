@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import uuid4
+import re
 import pandas as pd
 import streamlit as st
 
 from services.dashboard_service import DashboardDataError, read_dashboard
 from services.sheets_service import create_sheets_client, storage_configured
+from services.review_service import ReviewError, validate_review, save_review
+from services.writer_lock import get_writer_lock
 
 _LABELS = (
     ("Número de contrato", "numero_contrato"),
@@ -73,6 +77,8 @@ def render_live_dashboard(authenticated: bool) -> None:
         st.info("Pulsa Actualizar indicadores para cargar la información registrada.")
         return
 
+    if st.session_state.get("review_last_result"):
+        st.success(st.session_state.pop("review_last_result"))
     st.caption(
         "Última lectura UTC: "
         + st.session_state.get("dashboard_live_updated", "No disponible")
@@ -128,8 +134,19 @@ def render_live_dashboard(authenticated: bool) -> None:
             pd.DataFrame([
                 {
                     "Campo": label,
-                    "Valor registrado": contract.datos.get(key) or "No localizado",
-                    "Revisión": "Pendiente de cotejo con PDF",
+                    "Valor IA": contract.datos.get(key) or "No localizado",
+                    "Cotejo humano": (
+                        contract.revisiones[key].decision
+                        if key in contract.revisiones else "Pendiente"
+                    ),
+                    "Valor cotejado": (
+                        contract.revisiones[key].valor_cotejado
+                        if key in contract.revisiones else ""
+                    ),
+                    "Página": (
+                        contract.revisiones[key].pagina
+                        if key in contract.revisiones else ""
+                    ),
                 }
                 for label, key in _LABELS
             ]),
@@ -137,6 +154,120 @@ def render_live_dashboard(authenticated: bool) -> None:
             use_container_width=True,
         )
         st.caption(
-            "Las páginas, citas y la aprobación humana todavía no se "
-            "encuentran registradas. Los valores no son observaciones de auditoría."
+            f"**Avance del cotejo: {contract.campos_cotejados}/8 campos.** "
+            "Las revisiones humanas quedan registradas sin sobrescribir la respuesta de IA."
+        )
+        # Un vínculo directo permite cotejar visualmente el PDF escaneado.
+        if re.fullmatch(r"[A-Za-z0-9_-]{10,}", contract.documento_id):
+            st.link_button(
+                "Abrir PDF original en Google Drive",
+                f"https://drive.google.com/file/d/{contract.documento_id}/view",
+            )
+
+        st.markdown("#### Cotejo manual por campo")
+        st.caption(
+            "Confirma o corrige cada dato después de verificarlo en el PDF. "
+            "Registrar una página o cita no verifica automáticamente su exactitud."
+        )
+        labels = {key: label for label, key in _LABELS}
+        field_key = st.selectbox(
+            "Campo que deseas cotejar",
+            [key for _, key in _LABELS],
+            format_func=labels.get,
+            key=f"review_selector_{contract.documento_id}",
+        )
+        extracted_value = contract.datos.get(field_key, "")
+        earlier = contract.revisiones.get(field_key)
+        if earlier:
+            st.info(
+                f"Último cotejo: {earlier.decision} por "
+                f"{earlier.revisor_email} el {earlier.fecha_utc}. "
+                "Guardar una nueva revisión conserva el evento anterior."
+            )
+        st.write(f"**Valor que propuso la IA:** {extracted_value or 'No localizado'}")
+        prefix = f"review_{contract.documento_id}_{field_key}"
+        with st.form(key=f"form_{prefix}"):
+            decision = st.selectbox(
+                "Decisión del auditor",
+                ["Confirmado", "Corregido", "No localizado"],
+                index=2 if not extracted_value else 0,
+                key=f"decision_{prefix}",
+            )
+            corrected = st.text_input(
+                "Valor cotejado (vacío si no fue localizado)",
+                value=extracted_value,
+                key=f"valor_{prefix}",
+            )
+            page = st.text_input(
+                "Página del PDF donde aparece",
+                placeholder="Ejemplo: 1",
+                key=f"pagina_{prefix}",
+            )
+            quote = st.text_area(
+                "Fragmento de evidencia localizado en el PDF",
+                placeholder="Transcribe el texto que respalda el dato",
+                key=f"evidencia_{prefix}",
+                max_chars=1000,
+                height=88,
+            )
+            reason = st.text_area(
+                "Justificación (obligatoria para correcciones o datos no localizados)",
+                key=f"justificacion_{prefix}",
+                max_chars=2000,
+                height=82,
+            )
+            submitted = st.form_submit_button(
+                "Guardar cotejo del campo",
+                type="primary",
+            )
+        if submitted:
+            token_key = f"revision_token_{contract.documento_id}_{field_key}"
+            if token_key not in st.session_state:
+                st.session_state[token_key] = uuid4().hex
+            try:
+                reviewer_email = st.user.email
+                event = validate_review(
+                    obra_id=contract.obra_id,
+                    documento_id=contract.documento_id,
+                    cache_key=contract.cache_key,
+                    campo=field_key,
+                    decision=decision,
+                    valor_extraido=extracted_value,
+                    valor_cotejado=corrected,
+                    pagina=page,
+                    evidencia=quote,
+                    justificacion=reason,
+                    revisor_email=reviewer_email,
+                    revision_id=st.session_state[token_key],
+                )
+                with get_writer_lock():
+                    client = create_sheets_client(st.secrets["gcp_service_account"])
+                    created, _ = save_review(
+                        client, st.secrets["storage"]["spreadsheet_id"], event
+                    )
+                    refreshed = read_dashboard(
+                        client, st.secrets["storage"]["spreadsheet_id"]
+                    )
+                st.session_state["dashboard_live_snapshot"] = refreshed
+                st.session_state["dashboard_live_updated"] = (
+                    datetime.now(timezone.utc).isoformat(timespec="seconds")
+                )
+                st.session_state["review_last_result"] = (
+                    "Cotejo registrado en RevisionesContrato."
+                    if created else "La revisión ya estaba registrada; no se duplicó."
+                )
+                st.session_state.pop(token_key, None)
+                for suffix in ("decision", "valor", "pagina", "evidencia", "justificacion"):
+                    st.session_state.pop(f"{suffix}_{prefix}", None)
+                st.rerun()
+            except ReviewError as exc:
+                st.error(str(exc))
+            except Exception:
+                st.error(
+                    "No se pudo confirmar el guardado del cotejo. "
+                    "Consulta RevisionesContrato antes de intentar nuevamente."
+                )
+        st.caption(
+            "Los cotejos son registros de revisión profesional del piloto, "
+            "no dictámenes ni determinaciones de cumplimiento normativo."
         )
