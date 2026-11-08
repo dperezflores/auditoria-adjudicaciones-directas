@@ -8,11 +8,14 @@ import streamlit as st
 
 from security.app_access import require_access
 from ui.drive_explorer import render_drive_explorer
+from services.drive_service import is_configured
 
 st.set_page_config(page_title="AuditorIA | Adjudicaciones directas", page_icon="📋", layout="wide")
 
 # La demostración sigue abierta sin secretos; cualquier [auth] incompleto bloquea.
 access_granted = require_access()
+# Un secreto presente no garantiza una conexión exitosa a Drive.
+drive_secrets_present = access_granted and is_configured(st.secrets)
 
 st.markdown("""
 <style>
@@ -40,16 +43,16 @@ with st.sidebar:
     else:
         st.caption("Demo pública sin autenticación ni documentos reales")
     st.divider()
-    st.success("Entorno de demostración")
-    st.write("No conectado a Google Drive")
+    st.success("Datos ficticios en las vistas de demostración")
+    st.write("Drive: credenciales preparadas, acceso aún no verificado" if drive_secrets_present else "Drive: pendiente de configuración")
     st.write("Gemini: inactivo")
     st.write("Persistencia: solo esta sesión")
     st.divider()
-    st.caption("Próximo paso: configurar OAuth, Drive y registro persistente. Los expedientes reales no deben cargarse en esta versión.")
+    st.caption("Conexión Drive solo de lectura. No utilizar documentación confidencial en este piloto sin autorización institucional.")
 
 st.title("AuditorIA")
 st.caption("Revisión de adjudicaciones directas de obra pública")
-st.warning("**MODO DEMOSTRACIÓN.** Obras y documentos ficticios. Ningún archivo real se consulta, almacena ni envía a IA.")
+st.warning("**MODO PILOTO.** Las tres vistas originales utilizan datos ficticios. La pestaña Drive consulta únicamente metadatos si se configura la cuenta de servicio. No hay análisis con IA.")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Explorador demo", "Pruebas de auditoría", "Dashboard general", "Google Drive (piloto)"])
 
