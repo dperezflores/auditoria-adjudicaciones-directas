@@ -187,7 +187,7 @@ class ExtractionStoreTests(unittest.TestCase):
             self.calls += 1
             raise RuntimeError("Provider error sensitive details")
 
-        with self.assertRaisesRegex(ExtractionStateError, "no se confirmó"):
+        with self.assertRaisesRegex(ExtractionStateError, "No se confirmó"):
             extract_or_reuse(
                 self.client, "sheet-123", PDF, self.doc, OBRA_ID,
                 "private-key", invoke=bad,
