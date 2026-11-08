@@ -8,6 +8,7 @@ from services.contract_schema import ExtraccionContrato
 from services.drive_service import DocumentRecord
 from services.extraction_store import ExtractionStateError, extract_or_reuse
 from services.gemini_service import GeminiResult
+from services.gemini_errors import GeminiRequestError
 from services.extraction_cache import crear_clave_cache
 from services.contract_prompt import PROMPT_VERSION
 from services.contract_schema import SCHEMA_VERSION
@@ -197,6 +198,25 @@ class ExtractionStoreTests(unittest.TestCase):
         with self.assertRaises(ExtractionStateError):
             self.run_analysis()
         self.assertEqual(self.calls, 1)
+
+    def test_api_error_records_only_http_status(self):
+        def bad(_pdf, _key, *, model):
+            raise GeminiRequestError(400, "INVALID_ARGUMENT")
+
+        with self.assertRaisesRegex(
+            ExtractionStateError, "HTTP_400_INVALID_ARGUMENT"
+        ):
+            extract_or_reuse(
+                self.client, "sheet-123", PDF, self.doc,
+                OBRA_ID, "private-key", invoke=bad,
+            )
+        row = self.client.store.tables["Extracciones"][1]
+        self.assertEqual(row[1], "REQUIERE_REVISION")
+        self.assertEqual(row[13], "HTTP_400_INVALID_ARGUMENT")
+        self.assertNotIn("private-key", str(row))
+        with self.assertRaises(ExtractionStateError):
+            self.run_analysis()
+        self.assertEqual(self.calls, 0)
 
     def test_explicit_retry_after_failure(self):
         def bad(_pdf, _key, *, model):
