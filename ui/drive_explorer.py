@@ -204,9 +204,9 @@ def render_drive_explorer(authenticated: bool) -> None:
     ):
         with st.spinner("Verificando metadatos del modelo..."):
             check = inspect_model(api_key, model)
-        st.session_state.gemini_model_check = (model, check)
+        st.session_state["gemini_diagnostic_result"] = (model, check)
 
-    check_info = st.session_state.get("gemini_model_check")
+    check_info = st.session_state.get("gemini_diagnostic_result")
     model_verified = bool(
         check_info and check_info[0] == model and check_info[1].available
     )
