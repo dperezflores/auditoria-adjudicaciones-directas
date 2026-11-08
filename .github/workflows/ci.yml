@@ -17,4 +17,4 @@ jobs:
       - name: Instalar dependencias de pruebas
         run: python -m pip install 'pydantic>=2.10,<3' 'google-genai>=1.50,<2'
       - name: Pruebas unitarias de autorización y extracción
-        run: python -m unittest discover -s tests -v
+        run: timeout --signal=INT --kill-after=10s 45s python -u -m unittest discover -s tests -v
