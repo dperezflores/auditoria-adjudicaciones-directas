@@ -53,3 +53,7 @@ El módulo `services/drive_service.py` lista carpetas y metadatos PDF con la cue
 ## Activar persistencia
 
 Sigue [la guía de registro persistente](docs/REGISTRO_PERSISTENTE_SHEETS.md) para añadir a Streamlit Secrets el ID de la hoja ya creada. **Nunca compartas las claves privadas de la cuenta de servicio.**
+
+## Etapa Gemini (preparación, sin llamadas a IA)
+
+Ya se han publicado el esquema Pydantic con evidencia por campo, el prompt versionado y una clave determinista de caché por SHA-256 de contenido. Estos módulos **no ejecutan ni facturan Gemini**. Lee [la guía de extracción de contratos](docs/EXTRACCION_CONTRATOS_GEMINI.md) para ver el alcance, controles de privacidad y configuración futura de AI Studio.
