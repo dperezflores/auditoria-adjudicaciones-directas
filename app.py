@@ -90,7 +90,7 @@ else:
     st.caption("El motor de pruebas normativas se incorporará a esta vista.")
     st.info(
         "La identificación documental se realiza por nombre y ya está "
-        "disponible el extractor PUC-v1 bajo demanda en Expedientes. "
+        "disponibles los extractores PUC-v1 y DICTAMEN_AD-v1 en Expedientes. "
         "Los demás extractores se activarán por etapas. Las pruebas "
         "de capital contable, especialidad, vigencia "
         "del PUC, responsable técnico y secuencia de fechas requieren reglas "
