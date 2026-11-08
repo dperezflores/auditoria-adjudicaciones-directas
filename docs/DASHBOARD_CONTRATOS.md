@@ -32,19 +32,26 @@ Los cuatro indicadores se recalculan con los filtros activos:
   definidos por contrato, sin interpretarlo automáticamente como riesgo.
 
 ## Filtros, listado y detalle
-Filtros por texto (obra, número o contratista), año de firma, contratista y
-estado. El listado contiene número de contrato, nombre de obra, contratista,
-monto con IVA, porcentaje de anticipo, año de firma y cobertura de campos.
-Seleccionar una fila muestra la ficha completa, incluidas fechas literales
-de firma, inicio y término.
+Filtros por texto (obra, contrato o contratista), año de firma, contratista y
+estado. El listado se desplaza horizontalmente y **muestra los 16 campos
+literales de contrato como columnas**, incluidos fechas, PUC, RFC,
+representantes, modalidad, fuente de financiamiento y legislación citada.
+La lista completa de participantes aparece reunida en una sola celda por
+contrato, con nombre, cargo y representación. También se incluyen las
+observaciones extraídas, el ámbito normativo preliminar, el estado y la
+cobertura de campos.
 
-El detalle incluye un apartado desplegable con páginas y fragmentos de
-evidencia conservados en el JSON de extracción. La ficha permite abrir el
-contrato original para cotejar los resultados.
+En contratos anteriores a v2 se muestran solo los datos que se habían
+almacenado, dejando las demás columnas sin valor. No se inventan datos para
+rellenar los campos faltantes.
 
-Se puede exportar el listado filtrado a CSV. Los comparativos por contratista
-o año se presentan solo con varias observaciones comparables, evitando
-gráficos sin significado estadístico con un único registro.
+Seleccionar una fila actualiza automáticamente la **ficha contractual
+inferior**, que conserva las pestañas de datos, participantes, legislación
+y evidencias con fragmentos y páginas del PDF. El listado completo se
+puede exportar como CSV, incluyendo los campos visibles y los IDs de origen.
+
+Los comparativos por contratista o año se muestran sólo si hay
+observaciones suficientes y comparables.
 
 ## Exclusiones y controles
 - No incluye obras ni documentos desactivados.
