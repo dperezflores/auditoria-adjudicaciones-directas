@@ -12,7 +12,8 @@ import json
 from typing import Any, Callable
 from uuid import uuid4
 
-from services.contract_prompt import PROMPT_VERSION
+# Mantener estable la caché histórica v1 cuando se publica v2.
+PROMPT_VERSION = "contrato-prompt-v3"
 from services.contract_schema import ExtraccionContrato, SCHEMA_VERSION
 from services.drive_service import DocumentRecord
 from services.extraction_cache import CacheKey, crear_clave_cache
