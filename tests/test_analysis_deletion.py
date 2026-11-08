@@ -209,6 +209,41 @@ class DeleteAnalysisTests(unittest.TestCase):
         self.assertEqual(len(self.client.data["Extracciones"]), 2)
         self.assertEqual(self.client.data["Extracciones"][1][0], PUC_CACHE)
 
+    def test_can_delete_notification_without_touching_puc_or_dictamen(self):
+        # Add a third document and its notification extraction.
+        id_notif = "notificacionDocumento987"
+        key_notif = "cacheNotificacion987"
+        self.client.data["Documentos"].append(row_for("Documentos", dict(
+            documento_id=id_notif, obra_id=WORK,
+            nombre_archivo="NOTIFICACION_AD.pdf",
+            tipo_documental="NOTIFICACION_AD", mime_type="application/pdf",
+            md5_checksum="md5-notif", activo="SI",
+            estado_procesamiento="Analizado", resultado_id=key_notif,
+        )))
+        self.client.data["Extracciones"].append(row_for("Extracciones", dict(
+            cache_key=key_notif, estado="COMPLETADO",
+            documento_id=id_notif, obra_id=WORK,
+            version_esquema="notificacion-ad-v1",
+        )))
+        self.client.data["DatosNotificacionAD"].append(
+            row_for("DatosNotificacionAD", dict(
+                cache_key=key_notif, documento_id=id_notif, obra_id=WORK,
+                numero_notificacion="DGOP/TEST/2026",
+            ))
+        )
+        out = delete_analysis(
+            self.client, "spreadsheet-id",
+            DocumentRecord(id=id_notif, name="NOTIFICACION_AD.pdf",
+                           mime_type="application/pdf", md5_checksum="md5-notif"),
+            WORK, expected_result_id=key_notif, actor_email="auditor@example.com",
+        )
+        self.assertEqual(out.attempts_deleted, 1)
+        self.assertEqual(out.detail_rows_deleted, 1)
+        self.assertEqual(len(self.client.data["DatosNotificacionAD"]), 1)
+        self.assertEqual(len(self.client.data["DatosDictamenAD"]), 2)
+        self.assertEqual(len(self.client.data["DatosPUC"]), 2)
+        self.assertEqual(self.client.data["Documentos"][3][8], "Pendiente")
+
     def test_actor_email_and_sheet_headers_required(self):
         with self.assertRaises(ExtractionStateError):
             self.delete(actor_email="")
