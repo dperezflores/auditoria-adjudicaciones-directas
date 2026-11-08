@@ -8,14 +8,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-import io
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from services.contract_portfolio import (
-    DATA_FIELDS, FIELD_LABELS, ContractRecord, PortfolioError,
+    DATA_FIELDS, FIELD_LABELS, ContractRecord,
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
 )
 from services.sheets_service import create_sheets_client, storage_configured
@@ -179,7 +178,7 @@ def render_results() -> None:
         st.error("La conexión con Google Sheets todavía no está configurada.")
         return
 
-    top_left, top_right = st.columns([4, 1])
+    _, top_right = st.columns([4, 1])
     with top_right:
         refresh = st.button(
             "Actualizar datos", key="results_refresh",
@@ -189,7 +188,7 @@ def render_results() -> None:
         try:
             with st.spinner("Consultando los datos contractuales registrados..."):
                 _fetch_portfolio()
-        except (PortfolioError, Exception):
+        except Exception:
             st.session_state.pop("results_portfolio", None)
             st.session_state["results_read_error"] = (
                 "No fue posible obtener un listado contractual consistente "
@@ -246,7 +245,7 @@ def render_results() -> None:
         contractor=contractor, status=state,
     )
 
-    total, amount_note, unknown_amounts = amount_summary(filtered)
+    total, amount_note, _ = amount_summary(filtered)
     currencies = {r.currency for r in filtered if r.amount is not None}
     currency = next(iter(currencies)) if len(currencies) == 1 else ""
     col1, col2, col3, col4 = st.columns(4)
