@@ -52,7 +52,7 @@ root_folder_id = "ID_DE_LA_CARPETA_PILOTO"
 type = "service_account"
 project_id = "auditoria-ad-piloto"
 private_key_id = "VALOR_DEL_JSON_PRIVADO"
-private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 client_email = "CORREO_REAL_DE_CUENTA_DE_SERVICIO"
 client_id = "VALOR_DEL_JSON"
 auth_uri = "https://accounts.google.com/o/oauth2/auth"
@@ -63,7 +63,7 @@ universe_domain = "googleapis.com"
 ```
 
 Copia los valores **directamente del JSON generado**. Los textos de arriba son
-marcadores ilustrativos y no secretos utilizables. En TOML los `\\n` deben
+marcadores ilustrativos y no secretos utilizables. En TOML los `\n` deben
 interpretarse como saltos de línea en `private_key` (comillas normales, no simples).
 Nunca pegues el JSON completo en un mensaje de ChatGPT.
 
