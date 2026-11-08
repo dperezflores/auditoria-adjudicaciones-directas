@@ -15,6 +15,7 @@ from uuid import uuid4
 from services.contract_v2 import CONTRACT_V2_HEADERS
 from services.dictamen_schema import DICTAMEN_HEADERS
 from services.notificacion_schema import NOTIFICACION_HEADERS
+from services.orden_schema import ORDEN_HEADERS
 from services.extraction_store import (
     CONTRACT_HEADERS, DOCUMENT_HEADERS, EXTRACTION_HEADERS, ExtractionStateError,
 )
@@ -31,6 +32,7 @@ _TABLES = {
     "DatosPUC": PUC_HEADERS,
     "DatosDictamenAD": DICTAMEN_HEADERS,
     "DatosNotificacionAD": NOTIFICACION_HEADERS,
+    "DatosOrdenAD": ORDEN_HEADERS,
     "RevisionesContrato": REVIEW_HEADERS,
     "Historial": HEADERS["Historial"],
 }
@@ -41,6 +43,7 @@ _SOURCE = {
     "DatosPUC": (2, 1),
     "DatosDictamenAD": (2, 1),
     "DatosNotificacionAD": (2, 1),
+    "DatosOrdenAD": (2, 1),
     "RevisionesContrato": (3, 2),
 }
 
@@ -144,7 +147,7 @@ def delete_analysis(
         )
     # Evitar borrar accidentalmente una clave compartida entre documentos.
     for tab in ("DatosContrato", "DatosContratoV2", "DatosPUC", "DatosDictamenAD",
-                "DatosNotificacionAD"):
+                "DatosNotificacionAD", "DatosOrdenAD"):
         for row in tables[tab]:
             if row[0] in keys and (row[2], row[1]) != (doc.id, obra_id):
                 raise ExtractionStateError("La clave de caché se usa en otro documento.")
