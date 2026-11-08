@@ -366,6 +366,18 @@ class ContractPortfolioV2Tests(unittest.TestCase):
         with self.assertRaises(PortfolioError):
             prepare_contract_portfolio(data)
 
+    def test_noncontract_pdf_with_isolated_data_is_not_an_obra(self):
+        data = _contract_v2_fixture()
+        payload = json.loads(data["Extracciones"][-1][10])
+        for key in ("numero_contrato", "obra_servicio", "monto_contrato"):
+            column = 3 + CONTRACT_V2_FIELDS.index(key)
+            data["DatosContratoV2"][1][column] = ""
+            payload[key]["valor"] = None
+        data["Extracciones"][-1][10] = json.dumps(payload, ensure_ascii=False)
+        result = prepare_contract_portfolio(data)
+        self.assertEqual(result.works_count, 0)
+        self.assertEqual(len(result.records), 0)
+
     def test_old_and_new_document_formats_coexist(self):
         data = _contract_v2_fixture()
         data["Obras"].append([
