@@ -23,6 +23,8 @@ from services.dictamen_schema import DICTAMEN_LABELS, DictamenAdV1
 from services.dictamen_store import extract_or_reuse_dictamen
 from services.notificacion_schema import NOTIFICACION_LABELS, NotificacionAdV1
 from services.notificacion_store import extract_or_reuse_notificacion
+from services.orden_schema import ORDEN_LABELS, OrdenAdV1
+from services.orden_store import extract_or_reuse_orden
 from services.analysis_deletion import delete_analysis
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
@@ -46,6 +48,7 @@ ENABLED_EXTRACTORS = {
     "PUC": "puc-v1",
     "DICTAMEN_AD": "dictamen-ad-v1",
     "NOTIFICACION_AD": "notificacion-ad-v1",
+    "ORDEN_AD": "orden-ad-v1",
 }
 
 
@@ -318,6 +321,90 @@ def _summarize_saved(
                 st.warning(
                     "La notificación guardada no pudo interpretarse con el esquema v1."
                 )
+        elif old["version_esquema"] == "orden-ad-v1":
+            try:
+                report = OrdenAdV1.model_validate_json(old["resultado_json"])
+                st.markdown("#### Datos extraídos de la orden de adjudicación")
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Campo": label,
+                        "Texto literal": getattr(report, key).valor or "No localizado",
+                        "Página": getattr(report, key).pagina,
+                        "Evidencia": getattr(report, key).evidencia or "Sin evidencia",
+                    }
+                    for key, label in ORDEN_LABELS
+                ]), hide_index=True, use_container_width=True)
+
+                st.markdown("#### Personal de supervisión y coordinación mencionado")
+                if report.personal_designado:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Nombre": x.nombre,
+                            "Función literal": x.funcion or "—",
+                            "Dirección": x.direccion or "—",
+                            "Teléfono": x.telefono or "—",
+                            "Página": x.pagina,
+                            "Evidencia": x.evidencia or "—",
+                        } for x in report.personal_designado
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se identificó personal designado en la orden.")
+
+                st.markdown("#### Instrucciones, condiciones y plazos")
+                if report.instrucciones:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Instrucción literal": x.obligacion,
+                            "Plazo literal": x.plazo_literal or "No indicado",
+                            "Inicio del plazo": x.evento_inicio_plazo or "No indicado",
+                            "Condición": x.condicion or "—",
+                            "Consecuencia": x.consecuencia_literal or "—",
+                            "Destinatario": x.destinatario or "—",
+                            "Página": x.pagina,
+                            "Evidencia": x.evidencia or "—",
+                        } for x in report.instrucciones
+                    ]), hide_index=True, use_container_width=True)
+                else:
+                    st.info("No se identificaron instrucciones expresas.")
+
+                with st.expander("Fundamentos jurídicos citados"):
+                    if report.fundamentos:
+                        st.dataframe(pd.DataFrame([
+                            {
+                                "Norma": x.norma or "—",
+                                "Artículos": x.articulos or "—",
+                                "Página": x.pagina, "Evidencia": x.evidencia or "—",
+                            } for x in report.fundamentos
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No se localizaron referencias jurídicas explícitas.")
+                with st.expander("Documentos referidos en la orden"):
+                    if report.documentos_referidos:
+                        st.dataframe(pd.DataFrame([
+                            {
+                                "Documento": x.documento,
+                                "Finalidad indicada": x.finalidad or "—",
+                                "Página": x.pagina,
+                                "Evidencia": x.evidencia or "—",
+                            } for x in report.documentos_referidos
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No se identificaron documentos referidos.")
+                firma = report.firma_aparente
+                st.caption(
+                    "Firma aparente (no autenticada): "
+                    f"{firma.presencia}. {firma.nota_visual or ''}"
+                )
+                if report.observaciones:
+                    with st.expander("Advertencias de extracción"):
+                        for note in report.observaciones:
+                            st.write("• " + note)
+                st.caption(
+                    "Esta extracción no determina cumplimiento de plazos, "
+                    "formalización del contrato ni legalidad de la adjudicación."
+                )
+            except Exception:
+                st.warning("La orden guardada no pudo interpretarse con el esquema v1.")
         elif old["version_esquema"] == "contrato-v1":
             try:
                 parsed = ExtraccionContrato.model_validate_json(old["resultado_json"])
@@ -391,6 +478,12 @@ def _analyze(
                     )
                 elif code == "NOTIFICACION_AD":
                     result = extract_or_reuse_notificacion(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        model=model,
+                    )
+                elif code == "ORDEN_AD":
+                    result = extract_or_reuse_orden(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
                         pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
@@ -625,8 +718,8 @@ def render_expedientes(authenticated: bool) -> None:
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
-        "Extractores disponibles: **PUC-v1**, **DICTAMEN_AD-v1** y "
-        "**NOTIFICACION_AD-v1**. "
+        "Extractores disponibles: **PUC-v1**, **DICTAMEN_AD-v1**, "
+        "**NOTIFICACION_AD-v1** y **ORDEN_AD-v1**. "
         "La extracción comienza solo al pulsar Analizar; otros documentos "
         "no se enviarán a Gemini hasta habilitar su esquema especializado."
     )
@@ -688,7 +781,7 @@ def render_expedientes(authenticated: bool) -> None:
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
-    # Solo tres tipos con extractor propio llegan a Gemini.
+    # Solo cuatro tipos con extractor propio llegan a Gemini.
     eligible = [
         d for d in chosen
         if code_from_filename(d.name, d.mime_type) in ENABLED_EXTRACTORS
@@ -754,7 +847,7 @@ def render_expedientes(authenticated: bool) -> None:
     model = gemini.get("model") or DEFAULT_MODEL
     st.caption(
         f"Modelo Gemini: {model} · "
-        "Extractores: PUC-v1, DICTAMEN_AD-v1 y NOTIFICACION_AD-v1"
+        "Extractores: PUC-v1, DICTAMEN_AD-v1, NOTIFICACION_AD-v1 y ORDEN_AD-v1"
     )
     disabled = not batch or not gemini.get("api_key")
     if st.button(
