@@ -17,7 +17,8 @@ from services.analysis_catalog import (
 from services.contract_schema import ExtraccionContrato
 from services.document_analysis import GeneralAnalysis, analyze_document
 from services.drive_service import (
-    DriveInventory, DocumentRecord, WorkRecord, create_drive_client,
+    DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
+    DriveConfigurationError, MAX_PDF_BYTES, create_drive_client,
     download_verified_pdf, is_configured, scan_drive,
 )
 from services.extraction_store import (
@@ -149,11 +150,14 @@ def _analyze(
     total = len(selection)
     for ix, doc in enumerate(selection, 1):
         bar.progress((ix - 1) / total, text=f"Documento {ix}/{total}: {doc.name}")
+        stage = "drive"
         try:
             with get_writer_lock():
                 drive = create_drive_client(st.secrets["gcp_service_account"])
                 pdf = download_verified_pdf(drive, doc, obra.id)
+                stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
+                stage = "analisis"
                 if suggest_kind(doc.name) == "contrato":
                     result = extract_or_reuse(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
@@ -169,15 +173,30 @@ def _analyze(
                     reused = result.cached
             outcome = "Reutilizado (sin IA)" if reused else "Analizado y guardado"
             log.append({"Documento": doc.name, "Resultado": outcome})
-        except ExtractionStateError as exc:
-            log.append({"Documento": doc.name, "Resultado": f"No ejecutado: {str(exc)}"})
-        except Exception:
+        except (DriveConnectionError, DriveConfigurationError) as exc:
             log.append({
                 "Documento": doc.name,
-                "Resultado": (
-                    "No se pudo completar. No reintentes sin consultar Extracciones."
-                ),
+                "Resultado": f"Problema de lectura en Drive: {exc} No se envió a Gemini.",
             })
+        except ExtractionStateError as exc:
+            log.append({"Documento": doc.name, "Resultado": f"Análisis no confirmado: {str(exc)}"})
+        except Exception:
+            if stage == "drive":
+                reason = (
+                    "Error de acceso o descarga de Google Drive. No se envió "
+                    "el PDF a Gemini. Verifica el acceso de lectura de la cuenta de servicio."
+                )
+            elif stage == "sheets":
+                reason = (
+                    "Error al conectar con Google Sheets. No se envió el PDF "
+                    "a Gemini. Verifica los permisos de escritura."
+                )
+            else:
+                reason = (
+                    "Fallo durante el procesamiento o guardado. Consulta "
+                    "Extracciones antes de volver a intentarlo."
+                )
+            log.append({"Documento": doc.name, "Resultado": reason})
         bar.progress(ix / total, text=f"Procesados {ix} de {total}")
     # Nuevo inventario de estados, solo lectura: nunca invoca Gemini.
     try:
@@ -334,20 +353,44 @@ def render_expedientes(authenticated: bool) -> None:
     chosen = [doc for doc in obra.pdfs if doc.id in selected]
     st.caption(
         f"Seleccionados: {len(chosen)} archivos · "
-        f"Límite por ejecución: {MAX_BATCH}"
+        f"Límite por ejecución: {MAX_BATCH} · PDF máximo: 50 MB"
     )
     if chosen:
         st.dataframe(pd.DataFrame([
-            {"Archivo": d.name, "Estado actual": states[d.id].label,
-             "Análisis propuesto": "Contrato" if suggest_kind(d.name) == "contrato" else "Ficha documental"}
+            {
+                "Archivo": d.name,
+                "Tamaño (MB)": round(d.size_bytes / 1_000_000, 2) if d.size_bytes else None,
+                "Estado actual": states[d.id].label,
+                "Análisis propuesto": (
+                    "Contrato" if suggest_kind(d.name) == "contrato" else "Ficha documental"
+                ),
+                "Compatibilidad": (
+                    "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
+                    else "Sin tamaño" if not d.size_bytes
+                    else "Supera 50 MB"
+                ),
+            }
             for d in chosen
         ]), hide_index=True, use_container_width=True)
 
     # La aplicación reconoce trabajos anteriores y evita volver a enviarlos.
     # Una ficha "Parcial"/"Revisar error" tampoco se reintenta sin revisión.
+    too_large = [doc for doc in chosen if doc.size_bytes > MAX_PDF_BYTES]
+    unknown_size = [doc for doc in chosen if doc.size_bytes <= 0]
+    if too_large:
+        st.warning(
+            f"{len(too_large)} PDF excede(n) el límite de 50 MB de Gemini "
+            "y no se enviarán a la API. Reduce su tamaño o divide el documento."
+        )
+    if unknown_size:
+        st.warning(
+            f"{len(unknown_size)} PDF no informa(n) tamaño en Drive. "
+            "Actualiza el inventario antes de analizarlos."
+        )
     to_process = [
         doc for doc in chosen
         if states[doc.id].label in ("Pendiente", "Sin registrar", "Desactualizado")
+        and 0 < doc.size_bytes <= MAX_PDF_BYTES
     ]
     batch = to_process[:MAX_BATCH] if mode == "Carpeta completa" else to_process
     if mode == "Carpeta completa" and len(to_process) > MAX_BATCH:
