@@ -78,3 +78,19 @@ Lee [el manual operativo](docs/INTERFAZ_OPERATIVA_EXPEDIENTES.md) antes de conec
 La extracción contractual fija de 16 campos conserva literalmente los valores del contrato (incluidas mayúsculas, puntuación, importes y fechas), incorpora una lista de personas participantes y registra la legislación citada y la fuente de financiamiento. La clasificación federal, estatal o municipal es **preliminar y derivada**, no un dictamen sobre límites de adjudicación.
 
 Los resultados nuevos se guardan en `DatosContratoV2` y en el JSON de `Extracciones`, sin alterar `DatosContrato` v1. En **Resultados**, la tabla muestra todos los campos contractuales en columnas y reúne las personas participantes en una celda; seleccionar una obra actualiza su ficha con datos, participantes, legislación y evidencias. El enlace **Ver PDF en Drive** aparece debajo de la consulta del análisis guardado en **Expedientes**. [Ver instrucciones](docs/EXTRACCION_CONTRATOS_V2.md).
+
+
+## Cruce documental de contratos y PUC
+
+En **Resultados** cada contrato seleccionado presenta también el bloque
+**Cruce documental de la obra seleccionada**. Se muestran el PUC y los demás
+documentos del mismo expediente, sus estados de extracción y las referencias
+de evidencia conservadas en Google Sheets. El cruce PUC-comparado presenta
+RFC, número de registro, razón social, representantes y vencimiento;
+adicionalmente muestra capital, especialidad y representación técnica cuando
+figuran en la extracción.
+
+Las coincidencias de datos no son determinaciones jurídicas de cumplimiento.
+No se vuelve a llamar a Gemini ni se mezclan documentos de obras distintas.
+
+[Guía del cruce documental](docs/CRUCE_DOCUMENTAL_CONTRATO_PUC.md).
