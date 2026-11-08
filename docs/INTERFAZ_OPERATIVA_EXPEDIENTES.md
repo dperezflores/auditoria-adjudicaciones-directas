@@ -26,7 +26,7 @@ Al seleccionar una obra se puede elegir:
 2. **Varios archivos:** uno o más PDFs seleccionados del mismo expediente.
 3. **Carpeta completa:** todos los PDFs del expediente, incluyendo subcarpetas.
 
-Máximo **10 PDF por ejecución** para controlar volumen, latencia y costos.
+Máximo **10 PDF por ejecución** para controlar volumen, latencia y costos. Si la carpeta contiene más de diez pendientes, el modo Carpeta completa procesa el siguiente lote de diez; al repetir la acción avanza a los restantes sin repetir los ya analizados.
 No se invoca Gemini por abrir la app, consultar o sincronizar. Se requiere
 pulsar Analizar y confirmar autorización para la selección específica.
 
