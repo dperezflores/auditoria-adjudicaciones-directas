@@ -10,6 +10,8 @@ from typing import Any, Mapping, Sequence
 
 from services.sync_engine import HEADERS as INVENTORY_HEADERS
 from services.extraction_store import CONTRACT_HEADERS, EXTRACTION_HEADERS
+from services.review_service import REVIEW_HEADERS, DECISIONS, ReviewRecord, latest_reviews
+from services.gemini_compact_schema import CAMPOS_CONTRATO
 
 
 class DashboardDataError(RuntimeError):
@@ -24,6 +26,12 @@ class ContractDashboardRow:
     estado: str
     datos: Mapping[str, str]
     detalle: str
+    cache_key: str
+    revisiones: Mapping[str, ReviewRecord]
+
+    @property
+    def campos_cotejados(self) -> int:
+        return len(self.revisiones)
 
 
 @dataclass(frozen=True)
@@ -53,6 +61,7 @@ _HEADERS = {
     "Documentos": INVENTORY_HEADERS["Documentos"],
     "Extracciones": EXTRACTION_HEADERS,
     "DatosContrato": CONTRACT_HEADERS,
+    "RevisionesContrato": REVIEW_HEADERS,
 }
 _DATA_FIELDS = CONTRACT_HEADERS[3:11]
 _VALID_EXTRACTION_STATES = {"COMPLETADO", "REQUIERE_REVISION"}
@@ -104,6 +113,11 @@ def prepare_dashboard(
         if record["activo"] == "SI" and record["obra_id"] in works
     }
     extraction_by_key = {record["cache_key"]: record for record in parsed["Extracciones"]}
+    reviews = []
+    for item in parsed["RevisionesContrato"]:
+        if item["campo"] not in CAMPOS_CONTRATO or item["decision"] not in DECISIONS:
+            raise DashboardDataError("El historial de cotejos contiene valores no admitidos.")
+        reviews.append(ReviewRecord(**item))
 
     contract_rows = []
     seen_contracts: set[tuple[str, str]] = set()
@@ -150,6 +164,14 @@ def prepare_dashboard(
                 "verificación documental por un auditor."
             )
 
+        reviewed = latest_reviews(reviews, doc["obra_id"], doc_id, key)
+        if len(reviewed) == len(CAMPOS_CONTRATO):
+            state = "Cotejo manual completo · requiere revisión final"
+            detail = (
+                "Los ocho campos tienen un cotejo humano registrado. "
+                "No implica aprobación de auditoría ni cumplimiento legal."
+            )
+
         contract_rows.append(ContractDashboardRow(
             obra_id=doc["obra_id"],
             documento_id=doc_id,
@@ -157,6 +179,8 @@ def prepare_dashboard(
             estado=state,
             datos=datos,
             detalle=detail,
+            cache_key=key,
+            revisiones=reviewed,
         ))
 
     work_rows = []
@@ -168,7 +192,10 @@ def prepare_dashboard(
             nombre=obra["nombre_carpeta"],
             pdf_activos=len(doc_items),
             contratos_recuperados=len(contract_items),
-            pendientes_cotejo=len(contract_items),
+            pendientes_cotejo=sum(
+                item.campos_cotejados < len(CAMPOS_CONTRATO)
+                for item in contract_items
+            ),
         ))
     return DashboardSnapshot(
         obras=tuple(work_rows),
@@ -178,7 +205,10 @@ def prepare_dashboard(
             item["estado_procesamiento"] not in ("Analizado",)
             for item in documents.values()
         ),
-        contratos_pendientes_cotejo=len(contract_rows),
+        contratos_pendientes_cotejo=sum(
+            item.campos_cotejados < len(CAMPOS_CONTRATO)
+            for item in contract_rows
+        ),
     )
 
 
