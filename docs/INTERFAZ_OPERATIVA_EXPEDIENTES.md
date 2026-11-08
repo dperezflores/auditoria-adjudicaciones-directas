@@ -11,8 +11,9 @@ La navegación incluye:
 - **Expedientes:** lista de carpetas, PDFs, estado de IA por archivo y por
   carpeta; actualización de Drive; análisis de uno, varios o todos los PDFs
   de una obra.
-- **Resultados:** consulta de análisis completos y parciales recuperables
-  desde Google Sheets, sin usar Gemini.
+- **Resultados:** dashboard con 16 columnas contractuales, personas
+  participantes en una celda y ficha interactiva por fila, desde Sheets
+  y sin utilizar Gemini.
 - **Pruebas de adjudicación:** sección disponible para implementar las
   reglas normativas específicas; todavía **no** emite determinaciones.
 
@@ -27,24 +28,34 @@ Al seleccionar una obra se puede elegir:
 3. **Carpeta completa:** todos los PDFs del expediente, incluyendo subcarpetas.
 
 Máximo **10 PDF por ejecución** para controlar volumen, latencia y costos. Si la carpeta contiene más de diez pendientes, el modo Carpeta completa procesa el siguiente lote de diez; al repetir la acción avanza a los restantes sin repetir los ya analizados.
-No se invoca Gemini por abrir la app, consultar o sincronizar. Se requiere
-pulsar Analizar y confirmar autorización para la selección específica.
+No se invoca Gemini por abrir la app, consultar o sincronizar. El análisis
+solo comienza cuando el usuario pulsa el botón Analizar.
 
 En esta primera versión, «Varios archivos» y «Carpeta completa» ejecutan
 un análisis **individual de cada PDF dentro de un mismo lote**. El análisis
 **cruzado/comparativo** entre documentos de una adjudicación (PUC vs contrato
 vs dictamen, etc.) se implementará después.
 
-## Tipos iniciales de análisis
+## Extractor contractual único
 
-- Si el nombre indica «Contrato» (y no «Convenio»), se ejecuta el extractor
-  estructurado de contrato de ocho campos.
-- Para los demás PDFs se ejecuta una **ficha documental general** que
-  identifica tipo, resumen, hasta 15 hechos citables con página y evidencia,
-  y hasta seis cuestiones por verificar.
+La pantalla de Expedientes **ya no muestra selector de plantilla**: al pulsar
+Analizar se utiliza siempre el extractor de contrato v2, que solicita
+**16 campos literales y la lista de personas participantes**, junto con
+páginas y evidencias. Esto también se aplica a PDFs de nombre abreviado.
 
-La detección del tipo por nombre es orientativa. Para los archivos con
-nombres genéricos podrá añadirse un selector explícito posteriormente.
+Los análisis v1 o generales anteriores siguen consultables. Si un documento
+solo tiene una extracción antigua, es posible solicitar una nueva v2
+manualmente; esto podría generar consumo, pero no borra la anterior.
+Si un documento tiene un resultado v2 vigente se omite; los intentos
+v2 inciertos quedan bloqueados sin reintentos automáticos.
+
+Si se selecciona un PDF no contractual, los campos no hallados quedan vacíos;
+no se incorpora automáticamente al listado de contratos por el mero hecho
+de que aparezca una empresa o RFC aislado. El análisis de cumplimiento
+cruzado con PUC, dictámenes y otros expedientes se añadirá después.
+
+En `Consultar análisis guardado`, **Ver PDF en Drive** aparece después
+de los datos de extracción, como último control de esa sección.
 
 Los archivos Word, Excel, imágenes y otros formatos aparecen listados,
 pero **no son enviados a Gemini** en esta etapa. Tampoco se convierten
@@ -91,8 +102,8 @@ una base o archivo específico con permisos y retención definidos.
 
 El repositorio GitHub público solo guarda código, no secretos ni PDFs.
 Google Drive está restringido mediante cuenta de servicio y la aplicación
-mediante autenticación Google. Una confirmación explícita precede a cada
-lote, pero **no sustituye una autorización institucional formal**.
+mediante autenticación Google. La aplicación requiere que el usuario inicie cada solicitud manualmente;
+eso **no sustituye una autorización institucional formal**.
 
 Antes de enviar expedientes reales, revisar los términos y nivel de servicio
 del proyecto Gemini: el nivel gratuito puede utilizar el contenido
