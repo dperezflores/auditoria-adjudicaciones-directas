@@ -19,6 +19,7 @@ from services.contract_portfolio import (
 from services.sheets_service import create_sheets_client, storage_configured
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
+from ui.document_crosscheck import render_document_crosscheck
 
 
 def _fetch_portfolio() -> None:
@@ -334,7 +335,10 @@ def render_results() -> None:
         "Al seleccionar otra fila de la tabla, la ficha inferior cambia "
         "automáticamente sin volver a ejecutar IA."
     )
-    _render_details(filtered[chosen_index])
+    chosen_contract = filtered[chosen_index]
+    _render_details(chosen_contract)
+    st.divider()
+    render_document_crosscheck(chosen_contract, portfolio.supporting_documents)
     st.divider()
     _render_aggregate_visuals(filtered)
     st.caption(
