@@ -14,6 +14,9 @@ import streamlit as st
 from services.analysis_catalog import (
     FileStatus, file_states, folder_states, load_status_tables,
 )
+from services.catalogo_xlsx import CATALOGO_SCHEMA_VERSION
+from services.catalogo_store import import_or_reuse_catalogo, load_catalog_rows
+import json
 from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import (
@@ -33,8 +36,8 @@ from services.analysis_deletion import delete_analysis
 from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
-    DriveConfigurationError, MAX_PDF_BYTES, create_drive_client,
-    download_verified_pdf, is_configured, scan_drive,
+    DriveConfigurationError, MAX_PDF_BYTES, MAX_XLSX_BYTES, create_drive_client,
+    download_verified_pdf, download_verified_xlsx, is_configured, scan_drive,
 )
 from services.extraction_store import (
     ExtractionStateError,
@@ -49,6 +52,7 @@ from services.writer_lock import get_writer_lock
 MAX_BATCH = 10
 # Extractores especializados autorizados. El contrato reutiliza su esquema v2.
 ENABLED_EXTRACTORS = {
+    "CATALOGO": CATALOGO_SCHEMA_VERSION,
     "CONTRATO": CONTRACT_SCHEMA_V2,
     "PUC": "puc-v1",
     "DICTAMEN_AD": "dictamen-ad-v1",
@@ -149,6 +153,36 @@ def _summarize_saved(
                 )
             except Exception:
                 st.warning("El registro contractual v2 no pudo interpretarse.")
+        elif old["version_esquema"] == CATALOGO_SCHEMA_VERSION:
+            try:
+                summary = json.loads(old["resultado_json"])
+                st.markdown("#### Catálogo original importado desde Excel (sin IA)")
+                a, b, c = st.columns(3)
+                a.metric("Conceptos contratados", summary["conceptos_originales"])
+                b.metric("Conceptos fuera de catálogo excluidos", summary["excluidos_fuera_catalogo"])
+                c.metric("Importe inicial calculado sin IVA", summary["importe_original_calculado_sin_iva"])
+                st.caption(summary["nota"])
+                sheets = create_sheets_client(st.secrets["gcp_service_account"])
+                records = [
+                    r for r in load_catalog_rows(sheets, st.secrets["storage"]["spreadsheet_id"])
+                    if r[0] == status.cache_key and r[2] == document.id
+                ]
+                if len(records) != int(summary["conceptos_originales"]):
+                    st.error("El detalle de DatosCatalogo no coincide con el resumen guardado.")
+                else:
+                    st.dataframe(pd.DataFrame([
+                        {
+                            "Clave": r[6], "Descripción": r[7], "Unidad": r[8],
+                            "Cantidad inicial": r[9], "Precio U.": r[10],
+                            "Importe inicial": r[11], "Capítulo": r[5],
+                            "Hoja": r[3], "Fila Excel": r[4],
+                        } for r in records[:300]
+                    ]), hide_index=True, use_container_width=True)
+                    if len(records) > 300:
+                        st.caption("Vista de los primeros 300 conceptos; se guardaron todos en DatosCatalogo.")
+                    st.caption("Cantidades Excedente y Total Aut. no sustituyen la cantidad Inicial.")
+            except Exception:
+                st.warning("El catálogo está registrado, pero no fue posible consultar sus filas.")
         elif old["version_esquema"] == "puc-v1":
             try:
                 report = PucExtractionV1.model_validate_json(old["resultado_json"])
@@ -462,41 +496,50 @@ def _analyze(
         try:
             with get_writer_lock():
                 drive = create_drive_client(st.secrets["gcp_service_account"])
-                pdf = download_verified_pdf(drive, doc, obra.id)
+                code = code_from_filename(doc.name, doc.mime_type)
+                payload = (
+                    download_verified_xlsx(drive, doc, obra.id)
+                    if code == "CATALOGO"
+                    else download_verified_pdf(drive, doc, obra.id)
+                )
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
                 # Despacho explícito por código de archivo: nunca reutilizar
                 # el prompt del contrato para PUC o DICTAMEN_AD.
-                code = code_from_filename(doc.name, doc.mime_type)
-                if code == "CONTRATO":
+                if code == "CATALOGO":
+                    result = import_or_reuse_catalogo(
+                        sheets, st.secrets["storage"]["spreadsheet_id"],
+                        payload, doc, obra.id,
+                    )
+                elif code == "CONTRATO":
                     result = extract_or_reuse_v2(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        payload, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
                     )
                 elif code == "PUC":
                     result = extract_or_reuse_puc(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        payload, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
                     )
                 elif code == "DICTAMEN_AD":
                     result = extract_or_reuse_dictamen(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        payload, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
                     )
                 elif code == "NOTIFICACION_AD":
                     result = extract_or_reuse_notificacion(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        payload, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
                     )
                 elif code == "ORDEN_AD":
                     result = extract_or_reuse_orden(
                         sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                        payload, doc, obra.id, st.secrets["gemini"]["api_key"],
                         model=model,
                     )
                 else:
@@ -504,7 +547,11 @@ def _analyze(
                         "No existe extractor especializado para este tipo de documento."
                     )
                 reused = result.cached
-            outcome = "Reutilizado (sin IA)" if reused else "Analizado y guardado"
+            outcome = (
+                "Reutilizado (sin IA)" if reused
+                else "Importado desde Excel (sin IA)" if code == "CATALOGO"
+                else "Analizado y guardado"
+            )
             log.append({"Documento": doc.name, "Resultado": outcome})
         except (DriveConnectionError, DriveConfigurationError) as exc:
             log.append({
@@ -636,6 +683,10 @@ def render_expedientes(authenticated: bool) -> None:
     states = file_states(inventory, tables)
     folders = folder_states(inventory, states)
     pdf_total = inventory.pdf_total
+    catalog_total = sum(
+        code_from_filename(d.name, d.mime_type) == "CATALOGO"
+        for w in inventory.works for d in w.other_files
+    )
     complete = sum(v.label == "Analizado" for v in states.values())
     partial = sum(v.label == "Parcial" for v in states.values())
 
@@ -645,9 +696,9 @@ def render_expedientes(authenticated: bool) -> None:
     )
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Carpetas", len(inventory.works))
-    col2.metric("PDF registrados", pdf_total)
+    col2.metric("PDF y catálogos registrados", pdf_total + catalog_total)
     col3.metric("Analizados con IA", complete)
-    col4.metric("Pendientes o parciales", pdf_total - complete)
+    col4.metric("Pendientes o parciales", pdf_total + catalog_total - complete)
 
     if not inventory.works:
         st.info(
@@ -682,8 +733,12 @@ def render_expedientes(authenticated: bool) -> None:
             f"📁 {work.name}  ·  {fs.label}  ·  {fs.complete}/{fs.total} PDF analizados",
             expanded=len(visible) == 1,
         ):
-            if not work.pdfs:
-                st.caption("Esta carpeta no contiene PDF compatibles con el analizador.")
+            docs = [
+                *work.pdfs,
+                *(d for d in work.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
+            ]
+            if not docs:
+                st.caption("Esta carpeta no contiene documentos compatibles con los extractores.")
                 if work.other_files:
                     st.dataframe(pd.DataFrame([
                         {
@@ -703,9 +758,10 @@ def render_expedientes(authenticated: bool) -> None:
                     "Estado IA": states[doc.id].label,
                     "Actualizado": doc.modified_time,
                 }
-                for doc in work.pdfs
+                for doc in docs
             ]), hide_index=True, use_container_width=True)
-            if work.other_files:
+            extra_files = [d for d in work.other_files if d not in docs]
+            if extra_files:
                 st.markdown("**Otros documentos detectados**")
                 st.dataframe(pd.DataFrame([
                     {
@@ -718,7 +774,7 @@ def render_expedientes(authenticated: bool) -> None:
                             else "Formato no compatible"
                         ),
                     }
-                    for other in work.other_files
+                    for other in extra_files
                 ]), hide_index=True, use_container_width=True)
             st.caption(
                 "El tipo documental se asigna automáticamente a partir del nombre "
@@ -730,9 +786,9 @@ def render_expedientes(authenticated: bool) -> None:
     st.markdown("### Extracción documental")
     st.info(
         "Extractores disponibles: **CONTRATO-v2 (16 campos)**, **PUC-v1**, **DICTAMEN_AD-v1**, "
-        "**NOTIFICACION_AD-v1** y **ORDEN_AD-v1**. "
-        "La extracción comienza solo al pulsar Analizar; otros documentos "
-        "no se enviarán a Gemini hasta habilitar su esquema especializado."
+        "**NOTIFICACION_AD-v1**, **ORDEN_AD-v1** y **CATALOGO.xlsx (sin IA)**. "
+        "Los PDF se analizan con Gemini solo al pulsar Analizar; el Excel "
+        "se lee localmente sin IA y excluye los conceptos fuera de catálogo."
     )
     ids = [work.id for work in inventory.works]
     label_by_id = {work.id: work.name for work in inventory.works}
@@ -740,13 +796,17 @@ def render_expedientes(authenticated: bool) -> None:
         "Carpeta a trabajar", ids, format_func=label_by_id.get, key="ex_selected_folder"
     )
     obra = next(work for work in inventory.works if work.id == obra_id)
-    if not obra.pdfs:
-        st.info("Esta carpeta no contiene PDFs para analizar.")
+    work_docs = [
+        *obra.pdfs,
+        *(d for d in obra.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
+    ]
+    if not work_docs:
+        st.info("Esta carpeta no contiene PDFs o CATALOGO.xlsx para procesar.")
         return
-    doc_ids = [doc.id for doc in obra.pdfs]
+    doc_ids = [doc.id for doc in work_docs]
     doc_names = {
         doc.id: (doc.relative_path + "/" if doc.relative_path else "") + doc.name
-        for doc in obra.pdfs
+        for doc in work_docs
     }
     mode = st.radio(
         "Alcance del análisis",
@@ -766,12 +826,12 @@ def render_expedientes(authenticated: bool) -> None:
         )
     else:
         selected = doc_ids
-        st.caption("Se seleccionarán todos los PDF de la carpeta.")
+        st.caption("Se seleccionarán todos los PDF y CATALOGO.xlsx de la carpeta.")
 
-    chosen = [doc for doc in obra.pdfs if doc.id in selected]
+    chosen = [doc for doc in work_docs if doc.id in selected]
     st.caption(
         f"Seleccionados: {len(chosen)} archivos · "
-        f"Límite por ejecución: {MAX_BATCH} · PDF máximo: 50 MB"
+        f"Límite por ejecución: {MAX_BATCH} · PDF máximo: 50 MB · XLSX máximo: 15 MB"
     )
     if chosen:
         st.dataframe(pd.DataFrame([
@@ -784,8 +844,10 @@ def render_expedientes(authenticated: bool) -> None:
                     ENABLED_EXTRACTORS.get(code_from_filename(d.name, d.mime_type), "No habilitado")
                 ),
                 "Compatibilidad": (
-                    "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
-                    else "Sin tamaño" if not d.size_bytes
+                    "Listo" if 0 < d.size_bytes <= (
+                        MAX_XLSX_BYTES if d.mime_type == XLSX_MIME else MAX_PDF_BYTES
+                    ) else "Sin tamaño" if not d.size_bytes
+                    else "Supera límite XLSX 15 MB" if d.mime_type == XLSX_MIME
                     else "Supera 50 MB"
                 ),
             }
@@ -810,7 +872,8 @@ def render_expedientes(authenticated: bool) -> None:
     reused = 0
     blocked = 0
     for doc in eligible:
-        if not (0 < doc.size_bytes <= MAX_PDF_BYTES):
+        limit = MAX_XLSX_BYTES if doc.mime_type == XLSX_MIME else MAX_PDF_BYTES
+        if not (0 < doc.size_bytes <= limit):
             continue
         row = registered.get(doc.id)
         if not row or row["obra_id"] != obra.id or row["activo"] != "SI":
@@ -838,7 +901,7 @@ def render_expedientes(authenticated: bool) -> None:
         ):
             reused += 1
             continue
-        if states[doc.id].label not in ("Sin registrar", "Desactualizado"):
+        if states[doc.id].label != "Sin registrar":
             to_process.append(doc)
     batch = to_process[:MAX_BATCH]
     if blocked:
@@ -861,11 +924,16 @@ def render_expedientes(authenticated: bool) -> None:
     st.caption(
         f"Modelo Gemini: {model} · "
         "Extractores: CONTRATO-v2, PUC-v1, DICTAMEN_AD-v1, "
-        "NOTIFICACION_AD-v1 y ORDEN_AD-v1"
+        "NOTIFICACION_AD-v1, ORDEN_AD-v1 y CATALOGO-xlsx-v1 (sin IA)"
     )
-    disabled = not batch or not gemini.get("api_key")
+    requires_gemini = any(d.mime_type != XLSX_MIME for d in batch)
+    disabled = not batch or (requires_gemini and not gemini.get("api_key"))
+    button_label = (
+        f"Analizar {len(batch)} documento(s) con IA y/o importar Excel"
+        if requires_gemini else f"Importar {len(batch)} catálogo(s) sin IA"
+    )
     if st.button(
-        f"Analizar {len(batch)} documento(s) con IA",
+        button_label,
         type="primary", disabled=disabled, key="ex_analyze",
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
@@ -886,7 +954,7 @@ def render_expedientes(authenticated: bool) -> None:
         "Documento",
         doc_ids, format_func=doc_names.get, key=f"ex_preview_{obra.id}",
     )
-    preview = next(d for d in obra.pdfs if d.id == preview_id)
+    preview = next(d for d in work_docs if d.id == preview_id)
     current_state = file_states(inventory, st.session_state["ex_status_tables"])[preview.id]
     st.write(f"**Estado:** {current_state.label} · {current_state.detail}")
     _summarize_saved(preview, st.session_state["ex_status_tables"], current_state)
@@ -895,6 +963,6 @@ def render_expedientes(authenticated: bool) -> None:
     )
     if re.fullmatch(r"[A-Za-z0-9_-]{10,}", preview.id):
         st.link_button(
-            "Ver PDF en Drive",
+            "Ver documento en Drive",
             f"https://drive.google.com/file/d/{preview.id}/view",
         )
