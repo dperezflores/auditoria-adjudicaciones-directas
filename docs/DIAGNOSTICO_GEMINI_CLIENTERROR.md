@@ -95,3 +95,41 @@ aparecer HTTP 400, detener las pruebas de generación y evaluar un
 diagnóstico más fino sin seguir consumiendo llamadas repetidas.
 
 Referencia: https://ai.google.dev/gemini-api/docs/structured-output
+
+
+## Incidente v3: Gemini devolvió datos, pero Sheets informó un falso error
+
+En la tercera solicitud, el sistema registró `ExtractionStateError` y
+`REQUIERE_REVISION` en `Extracciones`. Una inspección de la misma hoja
+encontró **una fila completa de valores extraídos** en `DatosContrato`
+con la misma `cache_key`, mientras el documento quedó `Requiere validación`.
+
+**Causa confirmada en el código:** la función `_write_regions` comparaba
+`totalUpdatedRows` de la API Sheets con el número de rangos enviados.
+Se escribían cuatro rangos en tres filas físicas (dos rangos apuntaban a
+la fila de `Documentos`), por lo que el conteo era inferior aunque Google
+hubiese escrito los valores. Después, el manejador amplio de excepciones
+sobrescribía el JSON completo de `Extracciones` con una reserva vacía.
+
+**Correcciones:**
+
+1. Comprobar `responses[]` por rango en vez de comparar `totalUpdatedRows`
+   con el número de rangos.
+2. Si falla la confirmación de escritura **después** de recibir la respuesta
+   del modelo, no sobrescribir la reserva ni los datos que pudieran existir.
+3. Añadir el botón **Recuperar datos guardados (sin usar Gemini)**. Reconstruye
+   únicamente los valores escritos en `DatosContrato`; no llama al modelo y
+   no escribe de nuevo en Sheets.
+4. La recuperación **no inventa citas ni páginas**. Aparecen vacías y exigen
+   cotejo humano con el PDF; los intentos históricos `REQUIERE_REVISION`
+   permanecen intactos.
+
+### Próxima acción sin costo de IA
+
+Abrir AuditorIA, seleccionar la obra y el documento ficticio y pulsar
+**Recuperar datos guardados (sin usar Gemini)**. Revisar los ocho valores
+y la advertencia sobre la ausencia de páginas/evidencias. **No pulsar
+Analizar ni Reintentar**.
+
+Referencia técnica:
+https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/batchUpdate
