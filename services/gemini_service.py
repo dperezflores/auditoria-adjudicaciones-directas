@@ -42,16 +42,16 @@ def extract_contract(
     try:
         try:
             response = client.models.generate_content(
-            model=model.strip(),
-            contents=[
-                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                PROMPT_CONTRATO,
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ExtraccionContrato,
-            ),
-        )
+                model=model.strip(),
+                contents=[
+                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                    PROMPT_CONTRATO,
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ExtraccionContrato,
+                ),
+            )
         except genai_errors.APIError as exc:
             # Error seguro: mostrar solo HTTP y status, nunca texto del proveedor.
             raise GeminiRequestError(exc.code, exc.status) from None
