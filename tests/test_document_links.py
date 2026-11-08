@@ -23,8 +23,8 @@ def fixture():
     ])
     facts = [
         ("nombre_contratista", "CONSTRUCTORA DEL BAJÍO, S.A. DE C.V."),
-        ("numero_de_registro", "SOPI/PUC-5455-2023"),
-        ("rfc", "ABCD012345EF1"),
+        ("numero_de_registro", "GTO-SOPI/PUC-5455-2023"),
+        ("rfc", "ABC010101AB1"),
         ("vigencia_hasta", "9 de abril de 2027"),
         ("capital_contable", "$300,000.00"),
         ("especialidad", "OBRA DE INFRAESTRUCTURA VIAL TIPO B"),
@@ -93,13 +93,20 @@ class LinkedDocumentsTests(unittest.TestCase):
         self.assertEqual(puc_values(doc)["vigencia_hasta"]["pagina"], 1)
         comparison = compare_puc(contract, doc)
         self.assertEqual(comparison[0].resultado, "Coincide")
-        self.assertEqual(comparison[1].resultado, "Diferente")  # registros ficticios diferentes
-        self.assertEqual(comparison[2].resultado, "Diferente")  # RFC ficticios diferentes
+        self.assertEqual(comparison[1].resultado, "Coincide")
+        self.assertEqual(comparison[2].resultado, "Coincide")
         self.assertEqual(comparison[-1].resultado, "Fecha posterior a firma")
         self.assertIn("NO demuestra inicio de vigencia", comparison[-1].detalle)
 
     def test_different_identifiers_flag_uncertainty_not_compliance(self):
-        p = prepare_contract_portfolio(fixture())
+        data = fixture()
+        puc = next(row for row in data["Extracciones"][1:] if row[0] == "puc-key-current")
+        payload = json.loads(puc[10])
+        for field in payload["campos"]:
+            if field["campo"] == "rfc":
+                field["valor"] = "RFC_DIFERENTE"
+        puc[10] = json.dumps(payload, ensure_ascii=False)
+        p = prepare_contract_portfolio(data)
         contract = p.records[0]
         doc = candidate_puc_documents(contract, p.supporting_documents)[0]
         self.assertIn("NO coincide", identification_note(contract, doc))
