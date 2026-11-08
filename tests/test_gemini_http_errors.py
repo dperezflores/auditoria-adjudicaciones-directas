@@ -35,7 +35,7 @@ class GeminiErrorTests(unittest.TestCase):
             / "services" / "gemini_service.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("temperature=0", source)
-        self.assertIn("response_json_schema=GEMINI_COMPACT_SCHEMA", source)
+        self.assertIn("response_json_schema=GEMINI_RESPONSE_SCHEMA_V2", source)
         self.assertNotIn("response_schema=ExtraccionContrato", source)
 
 
