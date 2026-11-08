@@ -145,8 +145,14 @@ def parse_amount(raw: str) -> Decimal | None:
     """Interpretar sólo una cantidad explícita; no inferir valores faltantes."""
     if not isinstance(raw, str) or not raw.strip():
         return None
-    candidates = re.findall(r"\d[\d.,]*", raw)
+    # Los contratos mexicanos suelen duplicar el importe en letras:
+    # "$2,231,632.00 (DOS MILLONES... PESOS 00/100 M.N.)".
+    # "00/100" expresa centavos, NO otro monto. Ignorarlo solamente
+    # para el cálculo derivado; la transcripción literal permanece intacta.
+    cleaned = re.sub(r"\b\d{1,2}\s*/\s*100\b", " ", raw)
+    candidates = re.findall(r"\d[\d.,]*", cleaned)
     candidates = [x.rstrip(".,") for x in candidates if x.rstrip(".,")]
+    # Si hay dos cifras diferentes, no elegir arbitrariamente una.
     if len(candidates) != 1:
         return None
     value = candidates[0]
@@ -583,17 +589,34 @@ def amount_summary(records: Sequence[ContractRecord]) -> tuple[Decimal | None, s
     amounts = [r for r in records if r.amount is not None]
     currencies = {r.currency for r in amounts}
     unparsed = len(records) - len(amounts)
-    if len(currencies) > 1:
-        return None, "Monedas distintas; no sumar sin homologar.", unparsed
+    # MXN explícito + otro importe con el símbolo $ sin código de
+    # moneda: sumar solo PRELIMINARMENTE y advertir la incertidumbre.
+    # Nunca equiparar USD, EUR u otras divisas distintas de manera implícita.
+    provisional_mxn = (
+        currencies == {"MXN", "Sin divisa indicada"}
+        and all(
+            "$" in record.values.get("monto_con_iva", "")
+            for record in amounts if record.currency == "Sin divisa indicada"
+        )
+    )
+    if len(currencies) > 1 and not provisional_mxn:
+        return None, "Monedas distintas o no homologables; no se sumaron.", unparsed
     if not amounts:
         return None, "Sin importes numéricos interpretables.", unparsed
     total = sum((r.amount for r in amounts if r.amount is not None), Decimal("0"))
-    group = next(iter(currencies))
-    explanation = (
-        "Moneda sin identificar; total preliminar de cifras expresadas con $."
-        if group == "Sin divisa indicada"
-        else f"Importes declarados en {group}, no validados."
-    )
+    if provisional_mxn:
+        explanation = (
+            "Suma provisional: algunos montos citan pesos mexicanos y otros "
+            "solo incluyen el símbolo $. Verifica que todos estén en la "
+            "misma moneda antes de utilizar el total."
+        )
+    else:
+        group = next(iter(currencies))
+        explanation = (
+            "Moneda sin identificar; total preliminar de cifras expresadas con $."
+            if group == "Sin divisa indicada"
+            else f"Importes declarados en {group}, no validados."
+        )
     if unparsed:
         explanation += f" {unparsed} contrato(s) sin monto interpretable se excluyeron."
     return total, explanation, unparsed
