@@ -37,3 +37,9 @@ El repositorio está público temporalmente. No subir credenciales, tokens OAuth
 - Dashboard, trazabilidad y exportación.
 
 El prototipo visual no debe confundirse con un dictamen de auditoría ni con una herramienta de fiscalización en producción.
+
+## Configuración de Google Cloud
+
+El proyecto preparado para las siguientes integraciones es `auditoria-ad-piloto`. La guía detallada para habilitar Drive y Sheets y preparar posteriormente OAuth está en [docs/CONFIGURACION_GOOGLE_CLOUD.md](docs/CONFIGURACION_GOOGLE_CLOUD.md).
+
+**Nota:** todavía no se han habilitado ni verificado las APIs desde esta aplicación, y las credenciales no están configuradas. No cargues archivos reales mientras la versión publicada sea una demostración pública.
