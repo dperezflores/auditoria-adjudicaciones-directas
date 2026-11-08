@@ -94,6 +94,24 @@ def _find_unique(rows: list[list[str]], column: int, value: str) -> tuple[int, l
     return matches[0] if matches else None
 
 
+def _confirm_ranges(response: dict[str, Any], count: int) -> None:
+    """Comprobar los rangos, no el número de filas físicas.
+
+    Google devuelve una respuesta por rango, mientras totalUpdatedRows
+    cuenta filas distintas; varias escrituras a la misma fila no suman.
+    """
+    results = response.get("responses")
+    if not isinstance(results, list) or len(results) != count:
+        raise ExtractionStateError(
+            "Google Sheets no confirmó la escritura de todos los rangos."
+        )
+    for item in results:
+        if not isinstance(item, dict) or int(item.get("updatedRows") or 0) < 1:
+            raise ExtractionStateError(
+                "Google Sheets devolvió un rango sin confirmar."
+            )
+
+
 def _batch_write(client: Any, spreadsheet_id: str, writes: list[tuple[str, int, list[str]]]) -> None:
     data = []
     for name, row_num, cells in writes:
@@ -108,8 +126,7 @@ def _batch_write(client: Any, spreadsheet_id: str, writes: list[tuple[str, int, 
         spreadsheetId=spreadsheet_id,
         body={"valueInputOption": "RAW", "data": data},
     ).execute()
-    if int(result.get("totalUpdatedRows") or 0) < len(data):
-        raise ExtractionStateError("Google Sheets no confirmó todas las escrituras.")
+    _confirm_ranges(result, len(data))
 
 
 def _write_regions(client: Any, spreadsheet_id: str, writes: list[dict[str, Any]]) -> None:
@@ -117,8 +134,7 @@ def _write_regions(client: Any, spreadsheet_id: str, writes: list[dict[str, Any]
         spreadsheetId=spreadsheet_id,
         body={"valueInputOption": "RAW", "data": writes},
     ).execute()
-    if int(result.get("totalUpdatedRows") or 0) < len(writes):
-        raise ExtractionStateError("Google Sheets no confirmó todas las escrituras.")
+    _confirm_ranges(result, len(writes))
 
 
 def _needs_review(result: ExtraccionContrato) -> list[str]:
