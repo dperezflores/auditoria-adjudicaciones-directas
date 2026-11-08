@@ -11,6 +11,7 @@ from typing import Mapping, Sequence
 from uuid import uuid4
 
 from services.drive_service import DriveInventory, PDF_MIME, XLSX_MIME
+from services.document_classifier import code_from_filename
 
 HEADERS = {
     "Obras": (
@@ -176,12 +177,10 @@ def build_plan(
             "documento_id": doc_id,
             "obra_id": obra_id,
             "nombre_archivo": doc.name,
-            # El código confirmado se invalida al cambiar los bytes o la
-            # obra propietaria; nunca se conserva sobre una versión distinta.
-            "tipo_documental": (
-                prior["tipo_documental"] if prior and not changed
-                and prior["obra_id"] == obra_id else ""
-            ),
+            # Política de identificación: confiar en el nombre estándar.
+            # Recalcular en cada sincronización (altas, cambios o renombrados).
+            # No se leen bytes ni se ejecuta ninguna IA para clasificar.
+            "tipo_documental": code_from_filename(doc.name, doc.mime_type) or "",
             "mime_type": doc.mime_type,
             "md5_checksum": checksum,
             "fecha_modificacion_drive": doc.modified_time,
