@@ -16,6 +16,7 @@ from services.sheets_service import (
 )
 from services.extraction_store import ExtractionStateError, extract_or_reuse
 from services.gemini_service import DEFAULT_MODEL
+from services.gemini_diagnostics import inspect_model
 
 
 @st.cache_resource
@@ -193,6 +194,33 @@ def render_drive_explorer(authenticated: bool) -> None:
         st.warning("Falta [gemini] api_key en Streamlit Secrets.")
     if not is_demo_document:
         st.info("Solo está habilitado el contrato completamente ficticio del piloto.")
+
+    # Diagnóstico no generativo: metadata GET, sin descargar PDF ni consumir
+    # tokens de generación. No muestra claves ni mensajes sensibles.
+    if st.button(
+        "Diagnosticar acceso a Gemini (sin analizar PDF)",
+        key="gemini_model_check",
+        disabled=not bool(api_key),
+    ):
+        with st.spinner("Verificando metadatos del modelo..."):
+            check = inspect_model(api_key, model)
+        st.session_state.gemini_model_check = (model, check)
+
+    check_info = st.session_state.get("gemini_model_check")
+    model_verified = bool(
+        check_info and check_info[0] == model and check_info[1].available
+    )
+    if check_info and check_info[0] == model:
+        result = check_info[1]
+        if result.available:
+            st.success("Conexión a metadatos de Gemini: correcta. No se envió ningún PDF.")
+        else:
+            st.error(f"Diagnóstico: {result.code}. {result.description}")
+    else:
+        st.info(
+            "Antes de reintentar el análisis, comprueba el acceso al modelo "
+            "con el diagnóstico anterior. Esta acción no genera contenido."
+        )
     confirmation = st.checkbox(
         "Confirmo que este documento es ficticio y autorizo una solicitud "
         "a Gemini, que podría generar consumo o cargos.",
@@ -206,7 +234,7 @@ def render_drive_explorer(authenticated: bool) -> None:
     execute = st.button(
         "Analizar contrato con IA (o reutilizar caché)",
         key="gemini_contract_run",
-        disabled=not (api_key and is_demo_document and confirmation),
+        disabled=not (api_key and is_demo_document and confirmation and model_verified),
         type="primary",
     )
     if execute:
