@@ -33,8 +33,9 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertNotIn("analyze_document(", source)
         self.assertIn("extract_or_reuse_v2(", source)
         self.assertIn('key="ex_analyze"', source)
-        self.assertIn('"Código sugerido": guess_from_name(d.name, d.mime_type).label', source)
-        self.assertIn("render_classification(inventory)", source)
+        self.assertIn('"Tipo documental": guess_from_name(d.name, d.mime_type).label', source)
+        self.assertNotIn("render_classification(inventory)", source)
+        self.assertNotIn("Verificar tipo por contenido (sin IA)", source)
         self.assertIn("disabled = True", source)
         self.assertIn("is_current_v2(doc)", source)
         self.assertLess(
