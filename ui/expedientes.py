@@ -350,6 +350,13 @@ def render_expedientes(authenticated: bool) -> None:
         doc for doc in chosen
         if states[doc.id].label in ("Pendiente", "Sin registrar", "Desactualizado")
     ]
+    batch = to_process[:MAX_BATCH] if mode == "Carpeta completa" else to_process
+    if mode == "Carpeta completa" and len(to_process) > MAX_BATCH:
+        st.info(
+            f"La carpeta contiene {len(to_process)} PDF por procesar. "
+            f"Esta ejecución analizará los primeros {MAX_BATCH}; "
+            "podrás repetir para continuar con los siguientes."
+        )
     skips = len(chosen) - len(to_process)
     if skips:
         st.info(
@@ -381,15 +388,15 @@ def render_expedientes(authenticated: bool) -> None:
         key=approval_key,
     )
     disabled = (
-        not consent or not api_key or not to_process
-        or len(chosen) > MAX_BATCH
+        not consent or not api_key or not batch
+        or (mode != "Carpeta completa" and len(chosen) > MAX_BATCH)
         or any(states[d.id].label == "Sin registrar" for d in to_process)
     )
     if st.button(
-        f"Analizar {len(to_process)} documento(s) con IA",
+        f"Analizar {len(batch)} documento(s) con IA",
         type="primary", disabled=disabled, key="ex_analyze",
     ):
-        st.session_state["ex_last_run"] = _analyze(obra, to_process, model)
+        st.session_state["ex_last_run"] = _analyze(obra, batch, model)
         st.session_state["ex_reset_approval"] = approval_key
         st.rerun()
 
