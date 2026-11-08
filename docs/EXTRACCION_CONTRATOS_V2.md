@@ -50,20 +50,23 @@ normas vigentes en la fecha relevante.
 - Las solicitudes incompletas quedan bloqueadas contra reintentos automáticos.
 
 ## Cómo analizar nuevos documentos y actualizar anteriores
-En `Expedientes`, elige obra, alcance y archivo(s). En `Plantilla de
-extracción` puedes seleccionar:
-- **Automático:** identifica por nombre convencional si se trata de
-  contrato y aplica la nueva plantilla. Nombres abreviados como
-  `CNT_DIR_CNT.pdf` también se identifican como contrato.
-- **Contrato completo (16 campos):** fuerza el extractor especializado,
-  incluso si un contrato fue analizado anteriormente con plantilla
-  general o v1. Esto **puede consumir otra solicitud**, pero preserva el
-  resultado antiguo y solo se ejecuta con el botón Analizar.
-- **Ficha documental general:** análisis genérico para PUC, dictámenes,
-  oficios y otros PDFs, sin suplantar el extractor contractual.
+En `Expedientes`, elige obra, alcance y los PDF. Ya no existe selector
+de plantilla: **el botón Analizar siempre emplea los 16 campos del contrato
+(v2)** y extrae además la lista de personas participantes.
 
-Cuando un documento ya tiene un análisis v2 completo no se reanaliza.
-Si hay un v2 incierto, no se reintenta automáticamente.
+Si un documento fue analizado con una versión anterior, al pulsar Analizar
+se puede obtener la versión ampliada mediante una nueva solicitud a Gemini
+y se conserva el resultado histórico. Si ya tiene una extracción v2
+completa, se omite para no volver a generar cargos. Los intentos v2
+incompletos no se reintentan automáticamente.
+
+Un PDF que no es un contrato también puede examinarse con este esquema,
+pero los datos contractuales no encontrados quedan vacíos; una referencia
+aislada a una empresa o RFC no basta para integrarlo al dashboard de contratos.
+
+La sección `Consultar análisis guardado` muestra los valores persistentes
+y, debajo de ellos, el botón **Ver PDF en Drive** para abrir el documento
+original.
 
 ## Resultados interactivos
 La tabla de contratos usa selección de fila y `on_select='rerun'`. Al
@@ -81,8 +84,9 @@ no se rellenan los campos nuevos mediante conjeturas.
 ## Prueba sugerida sin costo de IA
 1. Abre Resultados y confirma que se conservan los contratos ya extraídos.
 2. Entra a Expedientes, selecciona un PDF ficticio o autorizado.
-3. Elige **Contrato completo (16 campos)** y revisa la selección antes de
-   pulsar Analizar; es una nueva solicitud que puede generar consumo.
+3. Comprueba que se indique **Extracción contractual · 16 campos**.
+   Solo pulsa Analizar si deseas generar o ampliar la extracción;
+   la llamada a Gemini puede generar consumo.
 4. Una vez terminado, abre Resultados, pulsa Actualizar datos y selecciona
    la fila para ver ficha, personas y legislación.
 5. Comprueba en `DatosContratoV2` que los campos textuales y el JSON de
