@@ -5,6 +5,7 @@ solo un resumen compacto; nunca se guarda el Excel completo en una celda.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -111,17 +112,25 @@ def load_catalog_rows(sheets: Any, sheet_id: str) -> list[list[str]]:
 
 
 def _summary(result: CatalogoResult) -> dict[str, object]:
+    # Una clave de precio unitario puede aparecer en varios capítulos;
+    # se guarda y contabiliza cada fila sin fusionar cantidades.
+    counts = Counter(item.clave.casefold() for item in result.conceptos)
+    repeated = [count for count in counts.values() if count > 1]
     return {
         "tipo": "CATALOGO",
         "version": CATALOGO_SCHEMA_VERSION,
         "conceptos_originales": len(result.conceptos),
+        "claves_repetidas": len(repeated),
+        "renglones_con_clave_repetida": sum(repeated),
         "excluidos_fuera_catalogo": result.excluidos_fuera_catalogo,
         "excluidos_cantidad_inicial_cero": result.excluidos_sin_cantidad_inicial,
         "conceptos_con_excedentes_no_incluidos": result.originales_con_excedente,
         "importe_original_calculado_sin_iva": result.total_original,
         "hojas": list(result.hojas),
         "nota": ("La cantidad de contrato corresponde a Inicial, NO a Total Aut. "
-                 "Los conceptos fuera de catálogo y excedentes no integran el importe original. "
+                 "Una misma clave puede repetirse en distintos capítulos o renglones; "
+                 "cada fila se conserva independientemente. Los conceptos fuera de "
+                 "catálogo y excedentes no integran el importe original. "
                  "Este cálculo no sustituye el presupuesto contractual firmado."),
     }
 
