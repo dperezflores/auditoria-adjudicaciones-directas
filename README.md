@@ -3,8 +3,12 @@
 Piloto para la revisión documental y pruebas de auditoría de adjudicación directa de obra pública en Guanajuato.
 
 ## Estado actual
-**Etapa 1: base de código y demostración de Streamlit.**
-Las tres vistas originales usan datos ficticios. Ya existe un explorador Drive independiente y de solo lectura, **pendiente de configurar** con una cuenta de servicio y acceso exclusivo a la carpeta piloto. Todavía no hay Gemini ni registros persistentes.
+**Etapa 2: extracción de `PUC.pdf` con Gemini bajo demanda.**
+Google Drive y Google Sheets están conectados, la clasificación documental
+se realiza por nombre y se guarda en la hoja maestra. El extractor
+`PUC-v1` obtiene 18 campos literales y la lista de especialidades,
+con página y evidencia, en `DatosPUC` y `Extracciones`.
+Los demás tipos documentales aún no pueden analizarse desde Expedientes.
 
 ## Objetivo
 1. Detectar obras y documentos PDF en una carpeta central de Google Drive.
@@ -111,3 +115,11 @@ retirada. El análisis de IA sigue temporalmente pausado hasta disponer
 de extractores específicos para cada tipo documental.
 
 [Reglas de nomenclatura e instrucciones](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
+
+## Etapa 2 — PUC-v1
+
+La interfaz permite analizar exclusivamente `PUC.pdf` de una obra,
+reutilizar la caché y consultar capital contable, fechas PUC, representación
+técnica y especialidades. Esto **no determina todavía cumplimiento** ni
+realiza cruces automáticos. Los documentos no PUC nunca se envían al
+extractor de PUC. [Guía para probar](docs/ETAPA_02_EXTRACCION_PUC.md).
