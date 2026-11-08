@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 
 from services.sync_engine import HEADERS as INVENTORY_HEADERS
 from services.extraction_store import EXTRACTION_HEADERS, CONTRACT_HEADERS
+from services.document_links import SupportingDocument, build_supporting_documents
 from services.contract_v2 import (
     CONTRACT_V2_FIELDS, CONTRACT_V2_HEADERS, ContractExtractionV2,
     classify_cited_regime,
@@ -105,6 +106,7 @@ class ContractRecord:
 @dataclass(frozen=True)
 class ContractPortfolio:
     records: tuple[ContractRecord, ...]
+    supporting_documents: tuple[SupportingDocument, ...] = ()
 
     @property
     def works_count(self) -> int:
@@ -531,7 +533,12 @@ def prepare_contract_portfolio(
         key=lambda r: (r.signature_year, r.values["numero_contrato"], r.documento_id),
         reverse=True,
     )
-    return ContractPortfolio(tuple(records))
+    return ContractPortfolio(
+        tuple(records),
+        build_supporting_documents(
+            parsed["Obras"], parsed["Documentos"], parsed["Extracciones"]
+        ),
+    )
 
 
 def read_contract_portfolio(client: Any, spreadsheet_id: str) -> ContractPortfolio:
