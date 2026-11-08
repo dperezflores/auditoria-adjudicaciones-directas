@@ -9,6 +9,9 @@ from typing import Any
 
 from services.contract_schema import ExtraccionContrato
 from services.gemini_errors import GeminiRequestError
+from services.gemini_compact_schema import (
+    GEMINI_COMPACT_SCHEMA, convertir_respuesta_compacta,
+)
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
@@ -49,23 +52,23 @@ def extract_contract(
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=ExtraccionContrato,
+                    response_json_schema=GEMINI_COMPACT_SCHEMA,
                 ),
             )
         except genai_errors.APIError as exc:
             # Error seguro: mostrar solo HTTP y status, nunca texto del proveedor.
             raise GeminiRequestError(exc.code, exc.status) from None
 
+        # Google recibe únicamente un esquema JSON compacto, no el modelo
+        # Pydantic anidado. Validación estricta de auditoría se mantiene aquí.
         parsed: Any = getattr(response, "parsed", None)
-        if isinstance(parsed, ExtraccionContrato):
-            extraction = parsed
-        elif parsed is not None:
-            extraction = ExtraccionContrato.model_validate(parsed)
+        if parsed is not None:
+            extraction = convertir_respuesta_compacta(parsed)
         else:
             raw_text = getattr(response, "text", None)
             if not isinstance(raw_text, str) or not raw_text.strip():
-                raise ValueError("Gemini no devolvió una extracción estructurada.")
-            extraction = ExtraccionContrato.model_validate_json(raw_text)
+                raise ValueError("Gemini no devolvió una extracción JSON válida.")
+            extraction = convertir_respuesta_compacta(raw_text)
 
         usage = getattr(response, "usage_metadata", None)
         in_tokens = getattr(usage, "prompt_token_count", None)
