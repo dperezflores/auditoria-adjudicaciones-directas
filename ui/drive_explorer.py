@@ -6,12 +6,16 @@ import threading
 import pandas as pd
 import streamlit as st
 
-from services.drive_service import create_drive_client, is_configured, scan_drive
+from services.drive_service import (
+    create_drive_client, download_verified_pdf, is_configured, scan_drive,
+)
 from services.sheets_service import (
     create_sheets_client,
     storage_configured,
     sync_to_sheets,
 )
+from services.extraction_store import ExtractionStateError, extract_or_reuse
+from services.gemini_service import DEFAULT_MODEL
 
 
 @st.cache_resource
@@ -153,7 +157,131 @@ def render_drive_explorer(authenticated: bool) -> None:
         hide_index=True,
         use_container_width=True,
     )
+    st.divider()
+    st.markdown("#### Extracción de datos del contrato con Gemini")
     st.caption(
-        "La sincronización conserva metadatos. Gemini, caché de extracciones y "
-        "pruebas de adjudicación directa se incorporarán en etapas posteriores."
+        "Etapa piloto: exclusivamente el contrato simulado. "
+        "La API solo se invoca al confirmar el análisis."
     )
+    if not storage_ready:
+        st.warning("Primero configura la hoja maestra de Google Sheets.")
+        return
+
+    document_ids = [d.id for d in work.pdfs]
+    names = {d.id: d.name for d in work.pdfs}
+    selected_pdf = st.selectbox(
+        "PDF que deseas analizar",
+        document_ids, format_func=names.get, key=f"analysis_doc_{work.id}",
+    )
+    document = next(d for d in work.pdfs if d.id == selected_pdf)
+
+    # Restricción explícita durante las pruebas: ningún expediente real
+    # u otro PDF de Drive se enviará a Gemini en esta fase.
+    allowed_demo_id = "1zGZjRXxLtaNmmMW-0kGOU9W6m7Wr1YA2"
+    is_demo_document = (
+        document.id == allowed_demo_id
+        and document.name.startswith("Contrato_SIMULADO_")
+    )
+    gemini_conf = st.secrets.get("gemini", {})
+    api_key = gemini_conf.get("api_key", "")
+    model = gemini_conf.get("model", DEFAULT_MODEL)
+    if not isinstance(model, str) or not model.strip():
+        st.error("Configura un modelo válido para Gemini.")
+        return
+    st.caption(f"Modelo configurado: {model}")
+    if not api_key:
+        st.warning("Falta [gemini] api_key en Streamlit Secrets.")
+    if not is_demo_document:
+        st.info("Solo está habilitado el contrato completamente ficticio del piloto.")
+    confirmation = st.checkbox(
+        "Confirmo que este documento es ficticio y autorizo una solicitud "
+        "a Gemini, que podría generar consumo o cargos.",
+        key="gemini_approval",
+    )
+    retry = st.checkbox(
+        "Autorizar reintento explícito si existe una solicitud incompleta "
+        "(podría generar un cargo adicional).",
+        key="gemini_retry",
+    )
+    execute = st.button(
+        "Analizar contrato con IA (o reutilizar caché)",
+        key="gemini_contract_run",
+        disabled=not (api_key and is_demo_document and confirmation),
+        type="primary",
+    )
+    if execute:
+        st.session_state.pop("extraction_display", None)
+        try:
+            with st.spinner("Comprobando PDF, caché y extracción..."):
+                with _local_writer_lock():
+                    client = create_drive_client(st.secrets["gcp_service_account"])
+                    pdf_bytes = download_verified_pdf(client, document, work.id)
+                    sheets_client = create_sheets_client(st.secrets["gcp_service_account"])
+                    outcome = extract_or_reuse(
+                        sheets_client, st.secrets["storage"]["spreadsheet_id"],
+                        pdf_bytes, document, work.id, api_key,
+                        model=model, allow_retry=retry,
+                    )
+            st.session_state.extraction_display = {
+                "document_id": document.id,
+                "md5": document.md5_checksum,
+                "result": outcome,
+            }
+        except ExtractionStateError as exc:
+            st.error(str(exc))
+        except Exception:
+            st.error(
+                "No fue posible completar la lectura del PDF. "
+                "Comprueba que siga en Drive, con los mismos metadatos, "
+                "y consulta el estado de la hoja Extracciones."
+            )
+
+    display = st.session_state.get("extraction_display")
+    if display and display["document_id"] == document.id and display["md5"] == document.md5_checksum:
+        outcome = display["result"]
+        if outcome.cached:
+            st.success("Resultado recuperado de Google Sheets: sin una nueva llamada a Gemini.")
+        else:
+            st.success("Resultado de Gemini guardado en Google Sheets.")
+        st.caption(
+            f"Clave de caché: {outcome.cache.clave[:16]}… "
+            f"· Entradas: {outcome.input_tokens if outcome.input_tokens is not None else 'N/D'} "
+            f"tokens · Salidas: {outcome.output_tokens if outcome.output_tokens is not None else 'N/D'} tokens"
+        )
+        fields = [
+            ("Número de contrato", "numero_contrato"),
+            ("Nombre de la obra", "nombre_obra"),
+            ("Contratista", "contratista"),
+            ("Fecha de firma", "fecha_firma"),
+            ("Fecha de inicio", "fecha_inicio"),
+            ("Fecha de término", "fecha_termino"),
+            ("Monto con IVA", "monto_con_iva"),
+            ("Anticipo", "porcentaje_anticipo"),
+        ]
+        st.dataframe(
+            pd.DataFrame([
+                {
+                    "Dato": label,
+                    "Valor extraído": getattr(outcome.extraction, key).valor or "No localizado",
+                    "Página": getattr(outcome.extraction, key).pagina,
+                    "Evidencia": getattr(outcome.extraction, key).evidencia or "Sin evidencia",
+                    "Revisar": (
+                        "Sí" if (
+                            getattr(outcome.extraction, key).requiere_revision
+                            or getattr(outcome.extraction, key).valor is None
+                        ) else "Cotejar"
+                    ),
+                }
+                for label, key in fields
+            ]),
+            hide_index=True, use_container_width=True,
+        )
+        if outcome.extraction.observaciones:
+            st.write("**Advertencias de la extracción:**")
+            for note in outcome.extraction.observaciones:
+                st.write(note)
+        st.warning(
+            "La extracción es preliminar. La página y el fragmento de evidencia "
+            "proceden de la IA y deben cotejarse visualmente con el PDF; "
+            "no constituyen pruebas de auditoría verificadas."
+        )
