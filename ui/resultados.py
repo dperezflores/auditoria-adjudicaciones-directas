@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import json
 
 import pandas as pd
 import plotly.express as px
@@ -18,6 +19,7 @@ from services.contract_portfolio import (
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
 )
 from services.sheets_service import create_sheets_client, storage_configured
+from services.contract_v2 import FIELD_LABELS_V2
 
 
 def _fetch_portfolio() -> None:
@@ -37,11 +39,12 @@ def _view_table(records: tuple[ContractRecord, ...]) -> pd.DataFrame:
             "Obra": r.values["nombre_obra"] or "Sin nombre extraído",
             "Contrato": r.values["numero_contrato"] or "Sin número",
             "Contratista": r.values["contratista"] or "No identificado",
-            "Monto con IVA": r.values["monto_con_iva"] or "No localizado",
+            "Monto del contrato": r.values["monto_con_iva"] or "No localizado",
             "Anticipo": r.values["porcentaje_anticipo"] or "No localizado",
             "Año de firma": r.signature_year,
             "Campos": r.coverage,
             "Estado": r.status_label,
+            "Régimen citado": r.normative_scope if r.full_values is not None else "Sin clasificar",
         }
         for r in records
     ])
@@ -52,6 +55,12 @@ def _filtered_download(records: tuple[ContractRecord, ...]) -> bytes:
         "obra_id": r.obra_id,
         "documento_id": r.documento_id,
         **{field: r.values[field] for field in DATA_FIELDS},
+        **{key: (r.full_values or {}).get(key, "") for key, _ in FIELD_LABELS_V2},
+        "participantes_json": json.dumps(
+            list(r.participants), ensure_ascii=False
+        ),
+        "ambito_normativo_preliminar": r.normative_scope if r.full_values else "",
+        "esquema": r.source_schema,
         "estado_extraccion": r.status_label,
         "campos_recuperados": r.completeness,
         "fecha_extraccion_utc": r.extracted_at,
@@ -103,70 +112,114 @@ def _render_aggregate_visuals(records: tuple[ContractRecord, ...]) -> None:
 
 
 def _render_details(record: ContractRecord) -> None:
-    st.markdown("### Ficha del contrato")
-    st.markdown(f"**{record.values['nombre_obra'] or 'Obra sin nombre identificado'}**")
+    """Ficha reactiva al seleccionar una fila del listado contractual."""
+    st.markdown("### Ficha del contrato seleccionado")
+    st.write(record.values["nombre_obra"] or "Obra o servicio no localizado")
     st.caption(
-        f"Contrato: {record.values['numero_contrato'] or 'Sin número'} · "
-        f"Estado: {record.status_label} · "
-        f"Datos recuperados: {record.coverage}"
+        f"Número: {record.values['numero_contrato'] or 'No localizado'} · "
+        f"Tipo de extracción: {record.source_schema} · "
+        f"Campos con valor: {record.coverage} · "
+        f"Estado: {record.status_label}"
     )
-    left, right = st.columns([1, 1], gap="large")
-    with left:
-        st.write("**Contratista**")
-        st.write(record.values["contratista"] or "No identificado")
-        st.write("**Fecha de firma**")
-        st.write(record.values["fecha_firma"] or "No localizada")
-        st.write("**Inicio de ejecución**")
-        st.write(record.values["fecha_inicio"] or "No localizado")
-    with right:
-        st.write("**Monto contractual con IVA**")
-        st.write(record.values["monto_con_iva"] or "No localizado")
-        st.write("**Anticipo**")
-        st.write(record.values["porcentaje_anticipo"] or "No localizado")
-        st.write("**Término de ejecución**")
-        st.write(record.values["fecha_termino"] or "No localizado")
 
-    if record.missing_fields:
-        labels = dict(FIELD_LABELS)
-        st.warning(
-            "Datos no localizados: " +
-            ", ".join(labels[field] for field in record.missing_fields) +
-            ". No deben suponerse valores."
-        )
+    general, people, legal, evidence_tab = st.tabs([
+        "Datos contractuales", "Personas participantes",
+        "Legislación y recursos", "Evidencias del PDF",
+    ])
+    with general:
+        if record.full_values is not None:
+            st.dataframe(
+                pd.DataFrame([
+                    {"Dato": label, "Texto literal del contrato": record.full_values.get(key) or "No localizado"}
+                    for key, label in FIELD_LABELS_V2
+                    if key not in ("legislacion_citada", "fuente_financiamiento")
+                ]),
+                hide_index=True, use_container_width=True,
+                column_config={
+                    "Dato": st.column_config.TextColumn(width="medium"),
+                    "Texto literal del contrato": st.column_config.TextColumn(width="large"),
+                },
+            )
+        else:
+            st.info(
+                "Este contrato fue extraído con una plantilla anterior. "
+                "Los campos nuevos no se deducirán: puedes elegir una extracción "
+                "ampliada en Expedientes cuando sea necesario."
+            )
+            st.dataframe(
+                pd.DataFrame([
+                    {"Dato": label, "Valor previamente extraído": record.values.get(field) or "No localizado"}
+                    for field, label in FIELD_LABELS
+                ]), hide_index=True, use_container_width=True,
+            )
+        if record.missing_fields:
+            labels = dict(FIELD_LABELS_V2) if record.full_values else dict(FIELD_LABELS)
+            st.caption(
+                "Campos no encontrados: " +
+                ", ".join(labels.get(key, key) for key in record.missing_fields)
+            )
 
-    with st.expander("Ver trazabilidad y evidencias extraídas", expanded=False):
+    with people:
+        if record.full_values is None:
+            st.info("La plantilla anterior no conservaba la lista estructurada de participantes.")
+        elif record.participants:
+            st.dataframe(pd.DataFrame([
+                {
+                    "Nombre (literal)": row.get("nombre") or "",
+                    "Cargo o carácter (literal)": row.get("cargo_o_caracter") or "No localizado",
+                    "Representa a": row.get("representacion") or "No localizado",
+                    "Página": row.get("pagina") if row.get("pagina") is not None else "—",
+                    "Evidencia": row.get("evidencia") or "Sin evidencia",
+                } for row in record.participants
+            ]), hide_index=True, use_container_width=True)
+        else:
+            st.info("No se identificaron personas participantes en la extracción.")
+
+    with legal:
+        if record.full_values is None:
+            st.info("Este campo no estaba disponible en la plantilla anterior.")
+        else:
+            st.write("**Fuente de financiamiento — texto del contrato**")
+            st.write(record.full_values.get("fuente_financiamiento") or "No localizado")
+            st.write("**Legislación o fundamento citado — texto del contrato**")
+            st.write(record.full_values.get("legislacion_citada") or "No localizado")
+            st.write("**Ámbito identificado preliminarmente (no es transcripción literal)**")
+            st.info(record.normative_scope)
+            st.caption(
+                "La legislación citada no determina por sí sola el límite "
+                "de adjudicación. Deben verificarse recursos, ejercicio fiscal, "
+                "ente contratante y normas aplicables. Sin prueba legal automática."
+            )
+
+    with evidence_tab:
         st.caption(
-            "Las páginas y los fragmentos siguientes provienen del análisis "
-            "automático; deben cotejarse con el contrato."
+            "La evidencia y el número de página son referencias propuestas por IA. "
+            "Los textos se conservan sin normalizar."
         )
+        fields = FIELD_LABELS_V2 if record.full_values is not None else FIELD_LABELS
         details = []
-        for field, label in FIELD_LABELS:
+        for field, label in fields:
             source = record.evidence.get(field) or {}
             page = source.get("pagina")
-            evidence = source.get("evidencia")
             details.append({
                 "Dato": label,
-                "Valor registrado": record.values.get(field) or "No localizado",
-                "Página propuesta": str(page) if isinstance(page, int) else "—",
-                "Fragmento de evidencia": evidence or "Sin evidencia conservada",
+                "Valor literal": (
+                    (record.full_values or {}).get(field) if record.full_values is not None
+                    else record.values.get(field)
+                ) or "No localizado",
+                "Página": str(page) if isinstance(page, int) else "—",
+                "Evidencia": source.get("evidencia") or "Sin evidencia conservada",
             })
-        st.dataframe(
-            pd.DataFrame(details), hide_index=True, use_container_width=True,
-            column_config={
-                "Dato": st.column_config.TextColumn(width="medium"),
-                "Fragmento de evidencia": st.column_config.TextColumn(width="large"),
-            },
-        )
+        st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
         if record.observations:
-            st.markdown("**Notas de la extracción**")
+            st.markdown("**Observaciones de extracción**")
             for item in record.observations:
-                st.write(f"• {item}")
-        st.caption("Fecha del análisis (UTC): " + (record.extracted_at or "No disponible"))
-        if record.documento_id:
-            st.link_button(
-                "Consultar contrato original en Drive",
-                f"https://drive.google.com/file/d/{record.documento_id}/view",
-            )
+                st.write("• " + item)
+        st.caption("Fecha de extracción UTC: " + (record.extracted_at or "No disponible"))
+        st.link_button(
+            "Abrir contrato en Google Drive",
+            f"https://drive.google.com/file/d/{record.documento_id}/view",
+        )
 
 
 def render_results() -> None:
@@ -277,7 +330,7 @@ def render_results() -> None:
             "Obra": st.column_config.TextColumn(width="large"),
             "Contrato": st.column_config.TextColumn(width="medium"),
             "Contratista": st.column_config.TextColumn(width="large"),
-            "Monto con IVA": st.column_config.TextColumn(width="medium"),
+            "Monto del contrato": st.column_config.TextColumn(width="medium"),
             "Estado": st.column_config.TextColumn(width="medium"),
         },
     )
@@ -290,13 +343,17 @@ def render_results() -> None:
         key="results_download",
     )
 
-    _render_aggregate_visuals(filtered)
-    st.divider()
     selected_rows = event.selection.rows
     chosen_index = selected_rows[0] if selected_rows else 0
     if chosen_index < 0 or chosen_index >= len(filtered):
         chosen_index = 0
+    st.caption(
+        "Al seleccionar otra fila de la tabla, la ficha inferior cambia "
+        "automáticamente sin volver a ejecutar IA."
+    )
     _render_details(filtered[chosen_index])
+    st.divider()
+    _render_aggregate_visuals(filtered)
     st.caption(
         "Los resultados son extracciones documentales. "
         "La valoración de cumplimiento, hallazgos y riesgos será materia "
