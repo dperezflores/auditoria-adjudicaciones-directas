@@ -18,6 +18,7 @@ from services.drive_service import DocumentRecord
 from services.extraction_cache import CacheKey, crear_clave_cache
 from services.gemini_service import DEFAULT_MODEL, GeminiResult, extract_contract
 from services.gemini_errors import GeminiRequestError
+from services.gemini_compact_schema import CAMPOS_CONTRATO
 
 EXTRACTION_HEADERS = (
     "cache_key", "estado", "documento_id", "obra_id", "sha256_pdf",
@@ -53,6 +54,7 @@ class ExtractionOutcome:
     cached: bool
     input_tokens: int | None
     output_tokens: int | None
+    recovered_partial: bool = False
 
 
 def _utc() -> str:
@@ -173,6 +175,87 @@ def _mark_document(
     ]
 
 
+def recover_saved_fields(
+    sheets: Any,
+    spreadsheet_id: str,
+    pdf_bytes: bytes,
+    doc: DocumentRecord,
+    obra_id: str,
+    *,
+    model: str = DEFAULT_MODEL,
+) -> ExtractionOutcome | None:
+    """Recupera exclusivamente los valores ya escritos en DatosContrato.
+
+    No modifica Sheets ni llama a Gemini. La página y la evidencia originales
+    no sobrevivieron al fallo de confirmación y se dejan siempre en null.
+    Solo se permite la misma versión exacta de PDF, modelo, prompt y esquema.
+    """
+    cache = crear_clave_cache(
+        pdf_bytes, modelo=model, version_prompt=PROMPT_VERSION,
+        version_esquema=SCHEMA_VERSION,
+    )
+    tables = _sheet_rows(sheets, spreadsheet_id)
+    doc_entry = _find_unique(tables["Documentos"], 0, doc.id)
+    if not doc_entry:
+        raise ExtractionStateError("El documento no figura en el registro de Drive.")
+    _, document_row = doc_entry
+    if (
+        document_row[1] != obra_id
+        or document_row[5] != doc.md5_checksum
+        or document_row[11] != "SI"
+    ):
+        raise ExtractionStateError(
+            "El documento cambió o está inactivo. Sincroniza Drive."
+        )
+    previous = _find_unique(tables["Extracciones"], 0, cache.clave)
+    if not previous:
+        return None
+    _, attempt = previous
+    if (
+        attempt[1] not in (UNCERTAIN, IN_PROGRESS)
+        or attempt[2] != doc.id
+        or attempt[3] != obra_id
+        or attempt[4] != cache.contenido_sha256
+        or attempt[5] != model
+        or attempt[6] != PROMPT_VERSION
+        or attempt[7] != SCHEMA_VERSION
+    ):
+        return None
+
+    matches = [
+        row for row in tables["DatosContrato"]
+        if row[0] == cache.clave and row[1] == obra_id and row[2] == doc.id
+    ]
+    if len(matches) > 1:
+        raise ExtractionStateError("Existen duplicados en DatosContrato.")
+    if not matches:
+        return None
+    record = matches[0]
+    if not any(value.strip() for value in record[3:11]):
+        return None
+    fields = {
+        name: {
+            "valor": record[index + 3].strip() or None,
+            "pagina": None,
+            "evidencia": None,
+        }
+        for index, name in enumerate(CAMPOS_CONTRATO)
+    }
+    extraction = ExtraccionContrato.model_validate({
+        **fields,
+        "observaciones": [
+            "Recuperación parcial de valores ya guardados en Google Sheets.",
+            "Las páginas y las evidencias originales no quedaron almacenadas; "
+            "todos los campos requieren cotejo humano con el PDF.",
+            "No se realizó una nueva solicitud a Gemini.",
+        ],
+    })
+    return ExtractionOutcome(
+        extraction=extraction, cache=cache, cached=True,
+        input_tokens=None, output_tokens=None, recovered_partial=True,
+    )
+
+
 def extract_or_reuse(
     sheets: Any,
     spreadsheet_id: str,
@@ -251,6 +334,7 @@ def extract_or_reuse(
         now, "", "", "", "",
     ]
     _batch_write(sheets, spreadsheet_id, [("Extracciones", row_num, reservation)])
+    phase = "GENERATING"
     try:
         gemini_result = invoke(pdf_bytes, api_key, model=model)
         if not isinstance(gemini_result, GeminiResult):
@@ -279,12 +363,23 @@ def extract_or_reuse(
             {"range": f"'DatosContrato'!A{flat_row}:M{flat_row}", "values": [flat_values]},
             *_mark_document(doc_num, doc_row, parsed, cache.clave, model, PROMPT_VERSION),
         ]
+        phase = "PERSISTING"
         _write_regions(sheets, spreadsheet_id, updates)
         return ExtractionOutcome(
             parsed, cache, False, gemini_result.input_tokens, gemini_result.output_tokens
         )
     except Exception as exc:
-        # No incluir mensajes de proveedores; podrían mostrar detalles privados.
+        if phase == "PERSISTING":
+            # El modelo YA devolvió datos. La escritura puede haber llegado
+            # a Sheets aunque el cliente no haya confirmado. No sobrescribir
+            # el JSON ni otros registros con una reserva vacía.
+            raise ExtractionStateError(
+                "Gemini devolvió una extracción, pero no se pudo confirmar "
+                "su almacenamiento completo. No reintentes Gemini: comprueba "
+                "DatosContrato y usa Recuperar datos guardados sin IA."
+            ) from None
+        # Solo los fallos de generación/validación se registran como
+        # intento incierto. No divulgar mensajes del proveedor.
         reservation[1] = UNCERTAIN
         reservation[9] = _utc()
         if isinstance(exc, GeminiRequestError):
