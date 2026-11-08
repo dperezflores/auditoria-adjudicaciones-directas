@@ -94,3 +94,15 @@ Las coincidencias de datos no son determinaciones jurídicas de cumplimiento.
 No se vuelve a llamar a Gemini ni se mezclan documentos de obras distintas.
 
 [Guía del cruce documental](docs/CRUCE_DOCUMENTAL_CONTRATO_PUC.md).
+
+
+## Etapa 1 — Identificación documental (sin IA)
+
+La aplicación ahora sugiere y verifica por contenido los códigos `CONTRATO`,
+`PUC`, `CATALOGO`, `DICTAMEN_AD`, `NOTIFICACION_AD` y `ORDEN_AD`.
+La verificación es manual, bajo demanda, sin Gemini. Los códigos confirmados
+se conservan en la hoja `Documentos`; `CATALOGO.xlsx` también queda
+registrado. El análisis Gemini está temporalmente pausado para impedir
+que se aplique el extractor contractual a otros tipos documentales.
+
+[Instrucciones de esta etapa](docs/ETAPA_01_CLASIFICACION_DOCUMENTAL.md).
