@@ -15,7 +15,6 @@ from services.analysis_catalog import (
     FileStatus, file_states, folder_states, load_status_tables,
 )
 from services.document_classifier import XLSX_MIME, guess_from_name
-from ui.document_classification import render_classification
 from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
 from services.extraction_store_v2 import extract_or_reuse_v2
@@ -305,7 +304,7 @@ def render_expedientes(authenticated: bool) -> None:
                         {
                             "Archivo": (doc.relative_path + "/" if doc.relative_path else "") + doc.name,
                             "Formato": doc.mime_type,
-                            "Código sugerido": guess_from_name(doc.name, doc.mime_type).label,
+                            "Tipo documental": guess_from_name(doc.name, doc.mime_type).label,
                             "Estado": "Excel registrado · sin extractor" if doc.mime_type == XLSX_MIME
                             else "Formato no compatible",
                         }
@@ -315,11 +314,7 @@ def render_expedientes(authenticated: bool) -> None:
             st.dataframe(pd.DataFrame([
                 {
                     "Archivo": (doc.relative_path + "/" if doc.relative_path else "") + doc.name,
-                    "Código sugerido": guess_from_name(doc.name, doc.mime_type).label,
-                    "Código registrado": next((
-                        row["tipo_documental"] for row in tables["Documentos"]
-                        if row["documento_id"] == doc.id
-                    ), "") or "Sin confirmar",
+                    "Tipo documental": guess_from_name(doc.name, doc.mime_type).label,
                     "Estado IA": states[doc.id].label,
                     "Actualizado": doc.modified_time,
                 }
@@ -331,11 +326,7 @@ def render_expedientes(authenticated: bool) -> None:
                     {
                         "Archivo": (other.relative_path + "/" if other.relative_path else "") + other.name,
                         "Formato": other.mime_type,
-                        "Código sugerido": guess_from_name(other.name, other.mime_type).label,
-                        "Código registrado": next((
-                            row["tipo_documental"] for row in tables["Documentos"]
-                            if row["documento_id"] == other.id
-                        ), "") or "Sin confirmar",
+                        "Tipo documental": guess_from_name(other.name, other.mime_type).label,
                         "Estado": (
                             "Excel registrado · extractor pendiente"
                             if other.mime_type == XLSX_MIME
@@ -345,11 +336,11 @@ def render_expedientes(authenticated: bool) -> None:
                     for other in work.other_files
                 ]), hide_index=True, use_container_width=True)
             st.caption(
-                "Los códigos que todavía no están registrados en Sheets son sugerencias "
-                "por nombre. CATALOGO.xlsx también se puede verificar sin IA."
+                "El tipo documental se asigna automáticamente a partir del nombre "
+                "estándar y la extensión, sin comprobar el contenido. "
+                "Si aparece POR_IDENTIFICAR, renombra el archivo y actualiza Drive."
             )
 
-    render_classification(inventory)
     st.divider()
     st.markdown("### Extracción documental")
     st.info(
@@ -402,7 +393,7 @@ def render_expedientes(authenticated: bool) -> None:
                 "Archivo": d.name,
                 "Tamaño (MB)": round(d.size_bytes / 1_000_000, 2) if d.size_bytes else None,
                 "Estado actual": states[d.id].label,
-                "Código sugerido": guess_from_name(d.name, d.mime_type).label,
+                "Tipo documental": guess_from_name(d.name, d.mime_type).label,
                 "Extractor": "Pendiente de activación por tipo",
                 "Compatibilidad": (
                     "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
