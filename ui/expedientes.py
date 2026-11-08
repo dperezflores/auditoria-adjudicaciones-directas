@@ -17,14 +17,14 @@ from services.analysis_catalog import (
 from services.contract_schema import ExtraccionContrato
 from services.contract_v2 import ContractExtractionV2, FIELD_LABELS_V2, classify_cited_regime
 from services.extraction_store_v2 import extract_or_reuse_v2
-from services.document_analysis import GeneralAnalysis, analyze_document
+from services.document_analysis import GeneralAnalysis
 from services.drive_service import (
     DriveInventory, DocumentRecord, WorkRecord, DriveConnectionError,
     DriveConfigurationError, MAX_PDF_BYTES, create_drive_client,
     download_verified_pdf, is_configured, scan_drive,
 )
 from services.extraction_store import (
-    ExtractionStateError, extract_or_reuse, recover_saved_fields,
+    ExtractionStateError,
 )
 from services.gemini_service import DEFAULT_MODEL
 from services.sheets_service import (
@@ -169,7 +169,6 @@ def _summarize_saved(
 
 def _analyze(
     obra: WorkRecord, selection: list[DocumentRecord], model: str,
-    analysis_choice: str = "Automático",
 ) -> list[dict[str, str]]:
     """Analiza secuencialmente con límite explícito de trabajo por sesión."""
     log = []
@@ -185,26 +184,12 @@ def _analyze(
                 stage = "sheets"
                 sheets = create_sheets_client(st.secrets["gcp_service_account"])
                 stage = "analisis"
-                use_contract = (
-                    analysis_choice == "Contrato completo (16 campos)"
-                    or (
-                        analysis_choice == "Automático"
-                        and suggest_kind(doc.name) == "contrato"
-                    )
+                result = extract_or_reuse_v2(
+                    sheets, st.secrets["storage"]["spreadsheet_id"],
+                    pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
+                    model=model,
                 )
-                if use_contract:
-                    result = extract_or_reuse_v2(
-                        sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"],
-                        model=model,
-                    )
-                    reused = result.cached
-                else:
-                    result = analyze_document(
-                        sheets, st.secrets["storage"]["spreadsheet_id"],
-                        pdf, doc, obra.id, st.secrets["gemini"]["api_key"], model=model,
-                    )
-                    reused = result.cached
+                reused = result.cached
             outcome = "Reutilizado (sin IA)" if reused else "Analizado y guardado"
             log.append({"Documento": doc.name, "Resultado": outcome})
         except (DriveConnectionError, DriveConfigurationError) as exc:
@@ -384,21 +369,6 @@ def render_expedientes(authenticated: bool) -> None:
         selected = doc_ids
         st.caption("Se seleccionarán todos los PDF de la carpeta.")
 
-    analysis_choice = st.selectbox(
-        "Plantilla de extracción",
-        [
-            "Automático",
-            "Contrato completo (16 campos)",
-            "Ficha documental general",
-        ],
-        index=0,
-        key="ex_analysis_choice",
-        help=(
-            "Automático utiliza el nombre del archivo. Si un contrato tiene "
-            "un nombre abreviado o ya se analizó con una plantilla antigua, "
-            "elige Contrato completo para obtener los 16 campos y participantes."
-        ),
-    )
     chosen = [doc for doc in obra.pdfs if doc.id in selected]
     st.caption(
         f"Seleccionados: {len(chosen)} archivos · "
@@ -410,13 +380,7 @@ def render_expedientes(authenticated: bool) -> None:
                 "Archivo": d.name,
                 "Tamaño (MB)": round(d.size_bytes / 1_000_000, 2) if d.size_bytes else None,
                 "Estado actual": states[d.id].label,
-                "Análisis propuesto": (
-                    "Contrato ampliado (16 campos)"
-                    if (
-                        analysis_choice == "Contrato completo (16 campos)"
-                        or (analysis_choice == "Automático" and suggest_kind(d.name) == "contrato")
-                    ) else "Ficha documental"
-                ),
+                "Análisis propuesto": "Extracción contractual · 16 campos",
                 "Compatibilidad": (
                     "Listo" if 0 < d.size_bytes <= MAX_PDF_BYTES
                     else "Sin tamaño" if not d.size_bytes
@@ -440,43 +404,64 @@ def render_expedientes(authenticated: bool) -> None:
             f"{len(unknown_size)} PDF no informa(n) tamaño en Drive. "
             "Actualiza el inventario antes de analizarlos."
         )
-    # Nueva plantilla contractual sobre un análisis antiguo = nueva
-    # solicitud EXPLÍCITA, nunca al refrescar la pantalla. Si ya existe v2,
-    # se reutiliza y no se envía a Gemini.
-    forced_contract = analysis_choice == "Contrato completo (16 campos)"
-    previous_v2 = {
-        a["documento_id"]: a["estado"]
-        for a in tables["Extracciones"]
-        if a["version_esquema"] == "contrato-v2"
-        and a["documento_id"] in {x.id for x in chosen}
+    # La extracción v2 es la única modalidad desde esta interfaz.
+    # Un PDF con v1 o ficha general se puede ampliar manualmente una vez,
+    # pero un v2 completo se reutiliza y uno incierto nunca se reintenta.
+    registered = {r["documento_id"]: r for r in tables["Documentos"]}
+    extractions = {r["cache_key"]: r for r in tables["Extracciones"]}
+    v2_attempts = {}
+    for row in tables["Extracciones"]:
+        if row["version_esquema"] == "contrato-v2":
+            v2_attempts.setdefault(row["documento_id"], []).append(row)
+
+    def is_current_v2(doc: DocumentRecord) -> bool:
+        item = registered.get(doc.id)
+        if not item or item["md5_checksum"] != doc.md5_checksum:
+            return False
+        result = extractions.get(item["resultado_id"])
+        return bool(
+            result
+            and result["version_esquema"] == "contrato-v2"
+            and result["estado"] == "COMPLETADO"
+            and result["resultado_json"]
+            and result["documento_id"] == doc.id
+            and result["obra_id"] == obra.id
+        )
+
+    blocked_v2 = {
+        doc.id for doc in chosen
+        if any(
+            row["estado"] in ("EN_PROCESO", "REQUIERE_REVISION")
+            for row in v2_attempts.get(doc.id, [])
+        )
     }
     to_process = []
+    old_version_ready = []
     for doc in chosen:
         if not (0 < doc.size_bytes <= MAX_PDF_BYTES):
             continue
-        state = states[doc.id].label
-        if forced_contract and state == "Analizado":
-            if doc.id in previous_v2:
-                continue
+        current = states[doc.id].label
+        if (
+            doc.id in blocked_v2 or is_current_v2(doc)
+            or current in ("Sin registrar", "Parcial", "Revisar error")
+        ):
+            continue
+        if current in ("Pendiente", "Analizado", "Desactualizado"):
             to_process.append(doc)
-        elif state in ("Pendiente", "Sin registrar", "Desactualizado"):
-            to_process.append(doc)
-    if forced_contract and any(
-        doc.id in previous_v2 and previous_v2[doc.id] != "COMPLETADO"
-        for doc in chosen
-    ):
+            if current == "Analizado":
+                old_version_ready.append(doc)
+
+    if blocked_v2:
         st.warning(
-            "Ya hay una solicitud de contrato v2 sin confirmar para algún PDF. "
-            "No se repetirá automáticamente; revisa Extracciones."
+            "Existe una solicitud de contrato v2 sin confirmar para "
+            f"{len(blocked_v2)} archivo(s). No se repetirá automáticamente."
         )
-    if forced_contract and any(
-        states[d.id].label == "Analizado" and d.id not in previous_v2
-        for d in to_process
-    ):
+    if old_version_ready:
         st.info(
-            "Seleccionaste una extracción ampliada sobre un documento "
-            "analizado con otra plantilla. Esto generará una nueva solicitud "
-            "a Gemini, conservará el resultado anterior y registrará la versión v2."
+            f"{len(old_version_ready)} documento(s) tienen una extracción anterior. "
+            "Al pulsar Analizar se obtendrán los 16 campos con la nueva versión "
+            "y se conservará el resultado histórico. Esto puede generar consumo "
+            "solo si no existe ya una extracción v2 reutilizable."
         )
     batch = to_process[:MAX_BATCH] if mode == "Carpeta completa" else to_process
     if mode == "Carpeta completa" and len(to_process) > MAX_BATCH:
@@ -510,7 +495,7 @@ def render_expedientes(authenticated: bool) -> None:
         f"Analizar {len(batch)} documento(s) con IA",
         type="primary", disabled=disabled, key="ex_analyze",
     ):
-        st.session_state["ex_last_run"] = _analyze(obra, batch, model, analysis_choice)
+        st.session_state["ex_last_run"] = _analyze(obra, batch, model)
         st.rerun()
 
     if st.session_state.get("ex_last_run"):
@@ -529,9 +514,9 @@ def render_expedientes(authenticated: bool) -> None:
     preview = next(d for d in obra.pdfs if d.id == preview_id)
     current_state = file_states(inventory, st.session_state["ex_status_tables"])[preview.id]
     st.write(f"**Estado:** {current_state.label} · {current_state.detail}")
+    _summarize_saved(preview, st.session_state["ex_status_tables"], current_state)
     if re.fullmatch(r"[A-Za-z0-9_-]{10,}", preview.id):
         st.link_button(
-            "Abrir PDF en Google Drive",
+            "Ver PDF en Drive",
             f"https://drive.google.com/file/d/{preview.id}/view",
         )
-    _summarize_saved(preview, st.session_state["ex_status_tables"], current_state)
