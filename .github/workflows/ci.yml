@@ -13,6 +13,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verificar sintaxis del proyecto
-        run: python -m compileall -q app.py security tests
+        run: python -m compileall -q app.py security services ui tests
       - name: Pruebas unitarias de autorización
         run: python -m unittest discover -s tests -v
