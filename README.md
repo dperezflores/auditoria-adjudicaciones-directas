@@ -75,6 +75,6 @@ Lee [el manual operativo](docs/INTERFAZ_OPERATIVA_EXPEDIENTES.md) antes de conec
 
 ## Extracción contractual ampliada (v2)
 
-La plantilla `Contrato completo (16 campos)` conserva literalmente los valores del contrato (incluidas mayúsculas, puntuación, importes y fechas), incorpora una lista de personas participantes y registra la legislación citada y la fuente de financiamiento. La clasificación federal, estatal o municipal es **preliminar y derivada**, no un dictamen sobre límites de adjudicación.
+La extracción contractual fija de 16 campos conserva literalmente los valores del contrato (incluidas mayúsculas, puntuación, importes y fechas), incorpora una lista de personas participantes y registra la legislación citada y la fuente de financiamiento. La clasificación federal, estatal o municipal es **preliminar y derivada**, no un dictamen sobre límites de adjudicación.
 
-Los resultados nuevos se guardan en `DatosContratoV2` y en el JSON de `Extracciones`, sin alterar `DatosContrato` v1. En **Resultados**, al seleccionar una obra en la tabla se actualiza su ficha con datos, participantes, legislación y evidencias. [Ver instrucciones](docs/EXTRACCION_CONTRATOS_V2.md).
+Los resultados nuevos se guardan en `DatosContratoV2` y en el JSON de `Extracciones`, sin alterar `DatosContrato` v1. En **Resultados**, la tabla muestra todos los campos contractuales en columnas y reúne las personas participantes en una celda; seleccionar una obra actualiza su ficha con datos, participantes, legislación y evidencias. El enlace **Ver PDF en Drive** aparece debajo de la consulta del análisis guardado en **Expedientes**. [Ver instrucciones](docs/EXTRACCION_CONTRATOS_V2.md).
