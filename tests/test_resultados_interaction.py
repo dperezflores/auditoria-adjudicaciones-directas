@@ -33,7 +33,9 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertNotIn("analyze_document(", source)
         self.assertIn("extract_or_reuse_v2(", source)
         self.assertIn('key="ex_analyze"', source)
-        self.assertIn('"Análisis propuesto": "Extracción contractual · 16 campos"', source)
+        self.assertIn('"Código sugerido": guess_from_name(d.name, d.mime_type).label', source)
+        self.assertIn("render_classification(inventory)", source)
+        self.assertIn("disabled = True", source)
         self.assertIn("is_current_v2(doc)", source)
         self.assertLess(
             source.index('_summarize_saved(preview, st.session_state["ex_status_tables"], current_state)'),
