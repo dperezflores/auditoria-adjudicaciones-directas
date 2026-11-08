@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.contract_schema import ExtraccionContrato
+from services.gemini_errors import GeminiRequestError
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
@@ -34,23 +35,26 @@ def extract_contract(
         raise ValueError("El nombre del modelo Gemini está vacío.")
 
     from google import genai
-    from google.genai import types
+    from google.genai import types, errors as genai_errors
     from services.contract_prompt import PROMPT_CONTRATO
 
     client = genai.Client(api_key=api_key)
     try:
-        response = client.models.generate_content(
+        try:
+            response = client.models.generate_content(
             model=model.strip(),
             contents=[
                 types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
                 PROMPT_CONTRATO,
             ],
             config=types.GenerateContentConfig(
-                temperature=0,
                 response_mime_type="application/json",
                 response_schema=ExtraccionContrato,
             ),
         )
+        except genai_errors.APIError as exc:
+            # Error seguro: mostrar solo HTTP y status, nunca texto del proveedor.
+            raise GeminiRequestError(exc.code, exc.status) from None
 
         parsed: Any = getattr(response, "parsed", None)
         if isinstance(parsed, ExtraccionContrato):
