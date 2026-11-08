@@ -132,8 +132,8 @@ class StoreV2Tests(unittest.TestCase):
         self.assertEqual(self.sheet.v.docs[1][13], output.cache.clave)
 
     def test_cache_reuses_same_result_and_no_second_gemini(self):
-        first = self.run()
-        second = self.run()
+        first = self.do_extract()
+        second = self.do_extract()
         self.assertFalse(first.cached)
         self.assertTrue(second.cached)
         self.assertEqual(self.calls, 1)
@@ -143,23 +143,23 @@ class StoreV2Tests(unittest.TestCase):
             self.calls += 1
             raise RuntimeError("Provider failure")
         with self.assertRaises(ExtractionStateError):
-            self.run(invoke=faulty)
+            self.do_extract(invoke=faulty)
         self.assertEqual(self.sheet.v.ex[1][1], "REQUIERE_REVISION")
         with self.assertRaises(ExtractionStateError):
-            self.run()
+            self.do_extract()
         self.assertEqual(self.calls, 1)
         self.assertEqual(len(self.sheet.v.v2), 1)
 
     def test_wrong_header_fails_before_gemini(self):
         self.sheet.v.v2[0][1] = "mal_encabezado"
         with self.assertRaises(ExtractionStateError):
-            self.run()
+            self.do_extract()
         self.assertEqual(self.calls, 0)
 
     def test_inactive_or_modified_pdf_is_not_reused(self):
         self.sheet.v.docs[1][11] = "NO"
         with self.assertRaises(ExtractionStateError):
-            self.run()
+            self.do_extract()
         self.assertEqual(self.calls, 0)
 
 
