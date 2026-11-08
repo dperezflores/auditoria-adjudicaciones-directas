@@ -1,0 +1,11 @@
+.streamlit/secrets.toml
+client_secret.json
+*.token.json
+.env
+.env.*
+.local/
+__pycache__/
+.pytest_cache/
+.venv/
+*.py[cod]
+.DS_Store
