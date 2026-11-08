@@ -186,6 +186,11 @@ def render_live_dashboard(authenticated: bool) -> None:
             )
         st.write(f"**Valor que propuso la IA:** {extracted_value or 'No localizado'}")
         prefix = f"review_{contract.documento_id}_{field_key}"
+        if st.session_state.get("review_reset_prefix") == prefix:
+            # Restablecer entradas ANTES de instanciar sus widgets.
+            for suffix in ("decision", "valor", "pagina", "evidencia", "justificacion"):
+                st.session_state.pop(f"{suffix}_{prefix}", None)
+            st.session_state.pop("review_reset_prefix", None)
         with st.form(key=f"form_{prefix}"):
             decision = st.selectbox(
                 "Decisión del auditor",
@@ -257,8 +262,7 @@ def render_live_dashboard(authenticated: bool) -> None:
                     if created else "La revisión ya estaba registrada; no se duplicó."
                 )
                 st.session_state.pop(token_key, None)
-                for suffix in ("decision", "valor", "pagina", "evidencia", "justificacion"):
-                    st.session_state.pop(f"{suffix}_{prefix}", None)
+                st.session_state["review_reset_prefix"] = prefix
                 st.rerun()
             except ReviewError as exc:
                 st.error(str(exc))
