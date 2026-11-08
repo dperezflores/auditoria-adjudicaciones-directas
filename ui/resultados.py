@@ -39,9 +39,7 @@ def _view_table(records: tuple[ContractRecord, ...]) -> pd.DataFrame:
             "Contratista": r.values["contratista"] or "No identificado",
             "Monto con IVA": r.values["monto_con_iva"] or "No localizado",
             "Anticipo": r.values["porcentaje_anticipo"] or "No localizado",
-            "Firma": r.values["fecha_firma"] or "No localizada",
-            "Inicio": r.values["fecha_inicio"] or "No localizado",
-            "Término": r.values["fecha_termino"] or "No localizado",
+            "Año de firma": r.signature_year,
             "Campos": r.coverage,
             "Estado": r.status_label,
         }
@@ -261,7 +259,7 @@ def render_results() -> None:
     st.markdown("#### Listado de obras y contratos")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
-        "Selecciona una fila para consultar sus datos y evidencias."
+        "Selecciona una fila para consultar fechas, datos completos y evidencias."
     )
     if not filtered:
         st.info("Ningún contrato coincide con los filtros.")
