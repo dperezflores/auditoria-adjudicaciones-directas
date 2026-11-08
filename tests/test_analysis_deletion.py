@@ -105,7 +105,7 @@ class FakeSheets:
         return Request({"sheets": [
             {"properties": {
                 "sheetId": self.names[name], "title": name,
-                "gridProperties": {"rowCount": 1000, "columnCount": 30},
+                "gridProperties": {"rowCount": 1000, "columnCount": 40},
             }}
             for name in _TABLES
         ]})
@@ -240,6 +240,39 @@ class DeleteAnalysisTests(unittest.TestCase):
         self.assertEqual(out.attempts_deleted, 1)
         self.assertEqual(out.detail_rows_deleted, 1)
         self.assertEqual(len(self.client.data["DatosNotificacionAD"]), 1)
+        self.assertEqual(len(self.client.data["DatosDictamenAD"]), 2)
+        self.assertEqual(len(self.client.data["DatosPUC"]), 2)
+        self.assertEqual(self.client.data["Documentos"][3][8], "Pendiente")
+
+    def test_delete_order_does_not_touch_other_document_types(self):
+        order_id = "ordenParaEliminar123"
+        order_cache = "cacheOrdenEliminar123"
+        self.client.data["Documentos"].append(row_for("Documentos", dict(
+            documento_id=order_id, obra_id=WORK,
+            nombre_archivo="ORDEN_AD.pdf", tipo_documental="ORDEN_AD",
+            mime_type="application/pdf", md5_checksum="md5Orden",
+            activo="SI", estado_procesamiento="Analizado",
+            resultado_id=order_cache,
+        )))
+        self.client.data["Extracciones"].append(row_for("Extracciones", dict(
+            cache_key=order_cache, estado="COMPLETADO",
+            documento_id=order_id, obra_id=WORK,
+            version_esquema="orden-ad-v1",
+        )))
+        self.client.data["DatosOrdenAD"].append(row_for("DatosOrdenAD", dict(
+            cache_key=order_cache, documento_id=order_id, obra_id=WORK,
+            numero_orden="587",
+        )))
+        result = delete_analysis(
+            self.client, "spreadsheet-id",
+            DocumentRecord(id=order_id, name="ORDEN_AD.pdf",
+                           mime_type="application/pdf", md5_checksum="md5Orden"),
+            WORK, expected_result_id=order_cache,
+            actor_email="auditor@example.com",
+        )
+        self.assertEqual(result.attempts_deleted, 1)
+        self.assertEqual(result.detail_rows_deleted, 1)
+        self.assertEqual(len(self.client.data["DatosOrdenAD"]), 1)
         self.assertEqual(len(self.client.data["DatosDictamenAD"]), 2)
         self.assertEqual(len(self.client.data["DatosPUC"]), 2)
         self.assertEqual(self.client.data["Documentos"][3][8], "Pendiente")
