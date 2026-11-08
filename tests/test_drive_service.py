@@ -120,6 +120,39 @@ class DriveTests(unittest.TestCase):
         self.assertFalse(is_configured({"drive": {"root_folder_id": ROOT}}))
         self.assertFalse(is_configured({"gcp_service_account": {"client_email": "test"}}))
 
+    def test_nested_pdf_inside_work_is_detected(self):
+        data = self.sample_data()
+        folder_id = "nestedFOLDER123"
+        data["children"][(WORK, "")] = {"files": [
+            {"id": folder_id, "name": "01 Contratos", "mimeType": FOLDER_MIME},
+        ]}
+        data["children"][(folder_id, "")] = {"files": [
+            {"id": "nestedPDF00001", "name": "Contrato_obra.pdf",
+             "mimeType": PDF_MIME, "md5Checksum": "abc"},
+        ]}
+        result = scan_drive(_Service(data), ROOT)
+        self.assertEqual(result.pdf_total, 1)
+        doc = result.works[0].pdfs[0]
+        self.assertEqual(doc.parent_id, folder_id)
+        self.assertEqual(doc.relative_path, "01 Contratos")
+
+    def test_scan_nested_folders_with_same_name_distinct_ids(self):
+        data = self.sample_data()
+        a, b = "nestedFOLDER123", "nestedFOLDER234"
+        data["children"][(WORK, "")] = {"files": [
+            {"id": a, "name": "Anexos", "mimeType": FOLDER_MIME},
+            {"id": b, "name": "Anexos", "mimeType": FOLDER_MIME},
+        ]}
+        data["children"][(a, "")] = {"files": [
+            {"id": "nestedPDF00001", "name": "PUC.pdf", "mimeType": PDF_MIME}
+        ]}
+        data["children"][(b, "")] = {"files": [
+            {"id": "nestedPDF00002", "name": "PUC.pdf", "mimeType": PDF_MIME}
+        ]}
+        result = scan_drive(_Service(data), ROOT)
+        self.assertEqual(result.pdf_total, 2)
+        self.assertEqual(len({d.id for d in result.works[0].pdfs}), 2)
+
     def test_invalid_root_type_rejected(self):
         data = self.sample_data()
         data["root"]["mimeType"] = PDF_MIME
