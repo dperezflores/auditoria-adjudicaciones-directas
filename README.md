@@ -57,3 +57,12 @@ Sigue [la guía de registro persistente](docs/REGISTRO_PERSISTENTE_SHEETS.md) pa
 ## Etapa Gemini: extracción de contrato ficticio bajo demanda
 
 La integración de Gemini está programada para la **prueba exclusiva con el contrato ficticio**, bajo pulsación y confirmación del usuario. El análisis comprueba la caché persistente en Google Sheets antes de enviar el PDF. En ausencia de resultados, reserva un registro e invoca el modelo configurado en Streamlit Secrets. Las pestañas `Extracciones` y `DatosContrato` conservan los resultados. Gemini no se ejecuta automáticamente al sincronizar Drive. Consulta [el manual de la primera prueba de Gemini](docs/PRUEBA_GEMINI_CONTRATO.md).
+
+
+## Cotejo manual por campo
+
+El dashboard permite registrar la revisión humana de cada campo del contrato
+con decisión `Confirmado`, `Corregido` o `No localizado`, y una referencia
+a la página y evidencia del PDF. Los eventos se guardan en la hoja
+`RevisionesContrato` sin sobrescribir los datos extraídos por Gemini.
+Consulta [la guía de cotejo manual](docs/COTEJO_MANUAL_CONTRATOS.md).
