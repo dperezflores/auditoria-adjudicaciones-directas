@@ -111,7 +111,7 @@ y segregación de expedientes.
 - Sin ejecución periódica en segundo plano: Drive se consulta al
   abrir la pantalla y con el botón Actualizar.
 - Documentos no PDF: se listan, pero no se analizan aún.
-- Límite de 20 MB por PDF para el procesamiento inline.
+- Límite de 50 MB decimales por PDF (50,000,000 bytes), conforme al máximo documentado para Gemini. Los archivos mayores aparecen en el inventario, pero no se envían a la API.
 - Carpetas internas: exploración de hasta seis niveles para controlar
   archivos y tiempo de respuesta.
 - Las pruebas legales de capital, especialidad, vigencia PUC, responsable
