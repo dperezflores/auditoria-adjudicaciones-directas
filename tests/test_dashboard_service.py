@@ -8,6 +8,7 @@ from services.dashboard_service import (
 )
 from services.sync_engine import HEADERS
 from services.extraction_store import EXTRACTION_HEADERS, CONTRACT_HEADERS
+from services.review_service import REVIEW_HEADERS
 
 OBRA1 = "folderObra001ABCDE"
 OBRA2 = "folderObra002ABCDE"
@@ -51,6 +52,7 @@ def fixture():
         "Documentos": docs,
         "Extracciones": extracts,
         "DatosContrato": contracts,
+        "RevisionesContrato": [list(REVIEW_HEADERS)],
     }
 
 
@@ -108,6 +110,44 @@ class DashboardDataTests(unittest.TestCase):
         data["DatosContrato"][0][3] = "valor_incorrecto"
         with self.assertRaises(DashboardDataError):
             prepare_dashboard(data)
+
+    def test_one_manual_review_counts_one_of_eight_fields(self):
+        data = fixture()
+        data["RevisionesContrato"].append([
+            "revision-001", "2026-11-08T06:00:00Z", OBRA1, DOC1,
+            KEY_V3, "numero_contrato", "Confirmado",
+            "SIM-AD-001/2026", "SIM-AD-001/2026", "1",
+            "Contrato SIM-AD-001/2026", "", "auditor@example.com",
+        ])
+        summary = prepare_dashboard(data)
+        self.assertEqual(summary.contratos[0].campos_cotejados, 1)
+        self.assertEqual(summary.contratos_pendientes_cotejo, 1)
+        self.assertEqual(
+            summary.contratos[0].revisiones["numero_contrato"].pagina, "1"
+        )
+
+    def test_manual_reviews_of_old_pdf_version_do_not_validate_current(self):
+        data = fixture()
+        data["RevisionesContrato"].append([
+            "revision-old", "2026-11-08T06:00:00Z", OBRA1, DOC1,
+            KEY_V1, "numero_contrato", "Confirmado",
+            "SIM-AD-001/2026", "SIM-AD-001/2026", "1",
+            "Contrato SIM-AD-001/2026", "", "auditor@example.com",
+        ])
+        self.assertEqual(prepare_dashboard(data).contratos[0].campos_cotejados, 0)
+
+    def test_full_manual_cotejo_not_equivalent_to_legal_approval(self):
+        data = fixture()
+        for index, campo in enumerate(CONTRACT_HEADERS[3:11]):
+            data["RevisionesContrato"].append([
+                f"revision-{index}", "2026-11-08", OBRA1, DOC1,
+                KEY_V3, campo, "No localizado",
+                "", "", "", "", "Dato no localizado", "auditor@example.com",
+            ])
+        summary = prepare_dashboard(data)
+        self.assertEqual(summary.contratos[0].campos_cotejados, 8)
+        self.assertEqual(summary.contratos_pendientes_cotejo, 0)
+        self.assertIn("revisión final", summary.contratos[0].estado)
 
     def test_complete_extraction_requires_human_cotejo(self):
         data = fixture()
