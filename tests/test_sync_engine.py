@@ -57,6 +57,7 @@ class SyncEngineTests(unittest.TestCase):
         self.assertEqual(plan.events, 2)
         tables = apply_plan(snapshot(), plan)
         self.assertEqual(record(tables, "Documentos", DOC_ID)["md5_checksum"], "aaa")
+        self.assertEqual(record(tables, "Documentos", DOC_ID)["tipo_documental"], "CONTRATO")
         self.assertEqual(record(tables, "Obras", WORK_ID)["total_pdf"], "1")
         self.assertEqual(len(tables["Sincronizaciones"]), 2)
 
@@ -79,6 +80,7 @@ class SyncEngineTests(unittest.TestCase):
         row = record(second, "Documentos", DOC_ID)
         self.assertEqual(row["estado_procesamiento"], "Pendiente")
         self.assertEqual(row["nombre_archivo"], "Cambio_de_nombre.pdf")
+        self.assertEqual(row["tipo_documental"], "")
         self.assertEqual(row["md5_checksum"], "aaa")
 
     def test_changed_pdf_sets_flag_without_deleting_extraction(self):
@@ -91,6 +93,7 @@ class SyncEngineTests(unittest.TestCase):
         second = apply_plan(first, plan)
         result = record(second, "Documentos", DOC_ID)
         self.assertEqual(result["estado_procesamiento"], MODIFIED)
+        self.assertEqual(result["tipo_documental"], "CONTRATO")
         self.assertEqual(result["resultado_id"], "extraction-123")
 
     def test_removed_file_remains_in_history_but_inactive(self):
@@ -131,6 +134,7 @@ class SyncEngineTests(unittest.TestCase):
         self.assertEqual(plan.new_pdfs, 1)
         self.assertEqual(record(second, "Documentos", DOC_ID)["revision"], "1")
         self.assertEqual(record(second, "Documentos", "secondDocument100")["nombre_archivo"], "PUC.pdf")
+        self.assertEqual(record(second, "Documentos", "secondDocument100")["tipo_documental"], "PUC")
 
     def test_catalog_excel_is_registered_without_counting_as_pdf(self):
         catalog_id = "excelCatalog123"
@@ -154,11 +158,10 @@ class SyncEngineTests(unittest.TestCase):
         excel = record(after, "Documentos", catalog_id)
         self.assertEqual(excel["mime_type"], XLSX_MIME)
         self.assertEqual(excel["nombre_archivo"], "CATALOGO.xlsx")
-        self.assertEqual(excel["tipo_documental"], "")
+        self.assertEqual(excel["tipo_documental"], "CATALOGO")
         self.assertEqual(record(after, "Obras", WORK_ID)["total_pdf"], "1")
-        # A confirmed code survives a stable scan; a different MD5 clears it.
+        # El código surge del nombre, incluso si cambia el contenido.
         excel_row = next(r for r in after["Documentos"][1:] if r[0] == catalog_id)
-        excel_row[3] = "CATALOGO"
         again = apply_plan(after, build_plan(with_excel, after, now="two"))
         self.assertEqual(record(again, "Documentos", catalog_id)["tipo_documental"], "CATALOGO")
         modified_doc = DocumentRecord(
@@ -173,8 +176,23 @@ class SyncEngineTests(unittest.TestCase):
             source.synced_at,
         )
         after_change = apply_plan(again, build_plan(changed, again, now="three"))
-        self.assertEqual(record(after_change, "Documentos", catalog_id)["tipo_documental"], "")
+        self.assertEqual(record(after_change, "Documentos", catalog_id)["tipo_documental"], "CATALOGO")
         self.assertEqual(record(after_change, "Documentos", catalog_id)["estado_procesamiento"], "Pendiente")
+
+    def test_renaming_to_canonical_code_sets_type_without_reanalysis(self):
+        first = apply_plan(snapshot(), build_plan(inventory(name="PADRON.pdf"), snapshot(), now="one"))
+        self.assertEqual(record(first, "Documentos", DOC_ID)["tipo_documental"], "")
+        renamed = apply_plan(first, build_plan(inventory(name="PUC.pdf"), first, now="two"))
+        row = record(renamed, "Documentos", DOC_ID)
+        self.assertEqual(row["tipo_documental"], "PUC")
+        self.assertEqual(row["md5_checksum"], "aaa")
+        self.assertEqual(row["estado_procesamiento"], "Pendiente")
+
+    def test_current_code_is_recomputed_even_if_old_code_was_wrong(self):
+        first = apply_plan(snapshot(), build_plan(inventory(name="PUC.pdf"), snapshot(), now="one"))
+        first["Documentos"][1][3] = "CONTRATO"
+        corrected = apply_plan(first, build_plan(inventory(name="PUC.pdf"), first, now="two"))
+        self.assertEqual(record(corrected, "Documentos", DOC_ID)["tipo_documental"], "PUC")
 
     def test_schema_mismatch_stops_writes(self):
         bad = snapshot()
