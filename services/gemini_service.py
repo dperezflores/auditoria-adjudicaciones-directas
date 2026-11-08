@@ -7,18 +7,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from services.contract_schema import ExtraccionContrato
+from services.contract_v2 import ContractExtractionV2, GEMINI_RESPONSE_SCHEMA_V2, parse_contract_v2
 from services.gemini_errors import GeminiRequestError
-from services.gemini_compact_schema import (
-    GEMINI_COMPACT_SCHEMA, convertir_respuesta_compacta,
-)
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 
 @dataclass(frozen=True)
 class GeminiResult:
-    extraction: ExtraccionContrato
+    extraction: ContractExtractionV2
     input_tokens: int | None
     output_tokens: int | None
 
@@ -52,7 +49,7 @@ def extract_contract(
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_json_schema=GEMINI_COMPACT_SCHEMA,
+                    response_json_schema=GEMINI_RESPONSE_SCHEMA_V2,
                 ),
             )
         except genai_errors.APIError as exc:
@@ -63,12 +60,12 @@ def extract_contract(
         # Pydantic anidado. Validación estricta de auditoría se mantiene aquí.
         parsed: Any = getattr(response, "parsed", None)
         if parsed is not None:
-            extraction = convertir_respuesta_compacta(parsed)
+            extraction = parse_contract_v2(parsed)
         else:
             raw_text = getattr(response, "text", None)
             if not isinstance(raw_text, str) or not raw_text.strip():
                 raise ValueError("Gemini no devolvió una extracción JSON válida.")
-            extraction = convertir_respuesta_compacta(raw_text)
+            extraction = parse_contract_v2(raw_text)
 
         usage = getattr(response, "usage_metadata", None)
         in_tokens = getattr(usage, "prompt_token_count", None)
