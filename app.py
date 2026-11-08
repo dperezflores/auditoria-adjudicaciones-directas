@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 
+from security.app_access import require_access
+
 st.set_page_config(page_title="AuditorIA | Adjudicaciones directas", page_icon="📋", layout="wide")
+
+# La demostración sigue abierta sin secretos; cualquier [auth] incompleto bloquea.
+access_granted = require_access()
 
 st.markdown("""
 <style>
@@ -28,6 +33,11 @@ if "demo_counter" not in st.session_state:
 with st.sidebar:
     st.title("AuditorIA")
     st.caption("Piloto · Adjudicaciones directas")
+    if access_granted:
+        st.caption("Acceso verificado con Google")
+        st.button("Cerrar sesión", on_click=st.logout)
+    else:
+        st.caption("Demo pública sin autenticación ni documentos reales")
     st.divider()
     st.success("Entorno de demostración")
     st.write("No conectado a Google Drive")
