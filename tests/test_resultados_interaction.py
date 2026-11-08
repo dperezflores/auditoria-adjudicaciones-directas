@@ -54,14 +54,14 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertIn('typed != "ELIMINAR"', source)
         self.assertNotIn("render_classification(inventory)", source)
         self.assertNotIn("Verificar tipo por contenido (sin IA)", source)
-        self.assertIn('disabled = not batch or not gemini.get("api_key")', source)
-        self.assertIn('f"Analizar {len(batch)} documento(s) con IA"', source)
+        self.assertIn('disabled = not batch or (requires_gemini and not gemini.get("api_key"))', source)
+        self.assertIn('f"Analizar {len(batch)} documento(s) con IA y/o importar Excel"', source)
         self.assertIn('saved["version_esquema"] == schema', source)
         self.assertIn('old["version_esquema"] == "dictamen-ad-v1"', source)
         self.assertIn('old["version_esquema"] == "puc-v1"', source)
         self.assertLess(
             source.index('_summarize_saved(preview, st.session_state["ex_status_tables"], current_state)'),
-            source.index('"Ver PDF en Drive"'),
+            source.index('"Ver documento en Drive"'),
         )
 
 
