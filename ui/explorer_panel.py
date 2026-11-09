@@ -8,6 +8,7 @@ al abrir la pantalla. Sin credenciales muestra un ejemplo sintético seguro.
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from html import escape
 from typing import Mapping
 
@@ -28,7 +29,7 @@ from ui.expedientes import (
     _render_delete_analysis, _summarize_saved,
 )
 from ui.preview_data import visual_preview
-from ui.theme import EXPECTED_DOCUMENTS, OPTIONAL_DOCUMENT
+from ui.theme import EXPECTED_DOCUMENTS, OPTIONAL_DOCUMENT, state_style
 
 
 def supported_docs(work: WorkRecord) -> tuple[DocumentRecord, ...]:
@@ -72,42 +73,88 @@ def _state_for(doc: DocumentRecord, states: Mapping[str, FileStatus]) -> str:
     return "POR_IDENTIFICAR" if not code_from_filename(doc.name, doc.mime_type) else "Sin registrar"
 
 
+def friendly_work_name(raw_name: str) -> str:
+    """Solo título de presentación: nunca cambia el ID de Drive."""
+    parts = raw_name.split("_")
+    if len(parts) >= 3 and parts[0].casefold() in ("ejemplo", "obra") and parts[1].isdigit():
+        return "Obra " + str(int(parts[1])).zfill(2) + " – " + " ".join(parts[2:]).replace("_", " ")
+    if len(parts) >= 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+        return (
+            f"Obra {int(parts[1])}/{parts[2]} – "
+            + " ".join(parts[3:])
+        )
+    return raw_name.replace("_", " ")
+
+
+def document_label(doc: DocumentRecord) -> str:
+    code = code_from_filename(doc.name, doc.mime_type)
+    return {
+        "CONTRATO": "Contrato", "PUC": "PUC",
+        "CATALOGO": "Presupuesto", "DICTAMEN_AD": "Dictamen AD",
+        "NOTIFICACION_AD": "Notificación AD", "ORDEN_AD": "Orden AD",
+    }.get(code or "", "Sin identificar")
+
+
+def _last_analysis(doc: DocumentRecord, states: Mapping[str, FileStatus], tables: dict) -> str:
+    status = states.get(doc.id)
+    if not status or status.label != "Analizado" or not status.cache_key:
+        return "—"
+    row = next((
+        x for x in tables["Extracciones"]
+        if x["cache_key"] == status.cache_key
+        and x["documento_id"] == doc.id
+    ), None)
+    if not row:
+        return "—"
+    raw = row.get("actualizado_utc") or row.get("creado_utc") or ""
+    return _date_short(raw)
+
+
+def _pages_label(doc: DocumentRecord, is_demo: bool) -> str:
+    # DriveInventory no almacena número de páginas. No inferir de las citas.
+    if is_demo:
+        return str({
+            "DA1": 23, "DA2": 1, "DA3": 2, "DA4": 3,
+            "DA5": 1, "DB1": 8, "DB2": 2, "DB3": 2,
+            "DC1": 13, "DC2": 2, "DC3": 1, "DC4": 2,
+        }.get(doc.id, "—"))
+    return "—"
+
+
+def _state_icon(state: str) -> str:
+    style = state_style(state)
+    return (
+        f'<span class="aud-tree-status aud-tree-status--{style.slug}" '
+        f'title="{escape(style.label, quote=True)}">'
+        f'{icono(style.icon, size=14)}</span>'
+    )
+
+
 def _selection() -> set[str]:
     return set(st.session_state.get("ex_v2_selected_ids") or ())
 
 
-def _set_selected(work_id: str, identifiers: set[str]) -> None:
-    """Callback previo a rerun: nunca cambia el valor de un widget ya renderizado."""
-    st.session_state["ex_v2_selected_work"] = work_id
-    st.session_state["ex_v2_focus_work"] = work_id
+def _set_selected(identifiers: set[str]) -> None:
+    """Selección global de documentos; se guardan IDs de Drive, no índices."""
     st.session_state["ex_v2_selected_ids"] = sorted(identifiers)
-    # Sincronizar controles persistentes en el callback, antes de que Streamlit
-    # los instancie de nuevo. La selección siempre pertenece a UNA obra.
-    known_eligible = set(
-        st.session_state.get("ex_v2_known_eligible", {}).get(work_id, ())
-    )
+    known_eligible = st.session_state.get("ex_v2_known_eligible", {})
     for key in tuple(st.session_state.keys()):
         if key.startswith("ex_v2_cb_row_"):
             st.session_state[key] = key[len("ex_v2_cb_row_"):] in identifiers
         elif key.startswith("ex_v2_cb_"):
             st.session_state[key] = key[len("ex_v2_cb_"):] in identifiers
         elif key.startswith("ex_v2_work_cb_"):
-            st.session_state[key] = (
-                key[len("ex_v2_work_cb_"):] == work_id
-                and bool(known_eligible)
-                and known_eligible.issubset(identifiers)
-            )
+            work_id = key[len("ex_v2_work_cb_"):]
+            eligible = set(known_eligible.get(work_id, ()))
+            st.session_state[key] = bool(eligible) and eligible.issubset(identifiers)
 
 
 def _focus_work(work_id: str) -> None:
-    previous = st.session_state.get("ex_v2_focus_work")
     st.session_state["ex_v2_focus_work"] = work_id
     expanded = set(st.session_state.get("ex_v2_expanded") or ())
     expanded.add(work_id)
     st.session_state["ex_v2_expanded"] = sorted(expanded)
-    if previous != work_id:
-        _set_selected(work_id, set())
-        st.session_state.pop("ex_v2_active_doc", None)
+    st.session_state.pop("ex_v2_active_doc", None)
 
 
 def _toggle_expand(work_id: str) -> None:
@@ -122,33 +169,33 @@ def _toggle_expand(work_id: str) -> None:
 def _toggle_document(work_id: str, doc_id: str, eligible_ids: frozenset[str]) -> None:
     if doc_id not in eligible_ids:
         return
-    selection = (
-        _selection() if st.session_state.get("ex_v2_selected_work") == work_id else set()
-    )
+    selected = _selection()
     if st.session_state.get(f"ex_v2_cb_{doc_id}", False):
-        selection.add(doc_id)
+        selected.add(doc_id)
     else:
-        selection.discard(doc_id)
-    _set_selected(work_id, selection)
+        selected.discard(doc_id)
+    _set_selected(selected)
 
 
 def _toggle_work(work_id: str, eligible_ids: frozenset[str]) -> None:
+    selected = _selection()
     if st.session_state.get(f"ex_v2_work_cb_{work_id}", False):
-        _set_selected(work_id, set(eligible_ids))
+        selected.update(eligible_ids)
     else:
-        _set_selected(work_id, set())
+        selected.difference_update(eligible_ids)
+    _set_selected(selected)
 
 
 def _select_one(work_id: str, doc_id: str) -> None:
-    _set_selected(work_id, {doc_id})
+    _set_selected(_selection() | {doc_id})
 
 
 def _select_all(work_id: str, eligible_ids: frozenset[str]) -> None:
-    _set_selected(work_id, set(eligible_ids))
+    _set_selected(_selection() | set(eligible_ids))
 
 
 def _clear_selection() -> None:
-    _set_selected(st.session_state.get("ex_v2_selected_work") or "", set())
+    _set_selected(set())
 
 
 def _open_document(work_id: str, doc_id: str) -> None:
@@ -157,7 +204,7 @@ def _open_document(work_id: str, doc_id: str) -> None:
 
 
 def _request_analysis() -> None:
-    """Se ejecuta la extracción en el flujo principal tras revalidar elegibilidad."""
+    """La extracción se ejecuta tras revalidar toda la selección en el rerun."""
     st.session_state["ex_v2_request_analysis"] = True
 
 
@@ -168,7 +215,7 @@ def _work_summary(folder, *, compact: bool = False) -> str:
         return "Todo analizado"
     if compact:
         return f"{folder.complete}/{folder.total} analizados · {folder.pending} pendientes"
-    return f"{folder.complete} de {folder.total} analizados · {folder.pending} por analizar"
+    return f"{folder.total} documentos · {folder.pending} por analizar"
 
 
 def _folder_has_no_attempt(work: WorkRecord, tables: dict, folder) -> bool:
