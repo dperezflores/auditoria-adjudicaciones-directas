@@ -24,6 +24,15 @@ class ResultadosSelectionTests(unittest.TestCase):
         self.assertIn("Evidencias del PDF", source)
         self.assertIn("FIELD_LABELS_V2", source)
 
+    def test_results_view_identifies_unique_amount_release(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "ui" / "resultados.py").read_text(encoding="utf-8")
+        self.assertIn("Versión de vista: monto único v2", source)
+        self.assertIn('key="results_contract_table_v2_monto_unico"', source)
+        self.assertIn('"Monto del contrato": st.column_config.TextColumn', source)
+        self.assertNotIn('"Monto del contrato con IVA": st.column_config', source)
+        self.assertNotIn('"Monto del contrato sin IVA": st.column_config', source)
+
     def test_specialized_puc_and_dictamen_extractors_and_pdf_link(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "ui" / "expedientes.py").read_text(encoding="utf-8")
