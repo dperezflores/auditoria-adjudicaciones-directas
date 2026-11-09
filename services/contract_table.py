@@ -1,8 +1,6 @@
-"""Filas del listado contractual: todos los campos literales disponibles.
+"""Tabla de Resultados normalizada; los literales originales siguen en la ficha.
 
-Contrato v2: 16 valores íntegros y personas participantes en una celda.
-Contratos de esquemas anteriores: se usan únicamente los datos conservados
-en esa versión, sin inferir los 16 campos nuevos.
+No modifica los archivos, el JSON de extracción ni la base de datos.
 """
 from __future__ import annotations
 
@@ -10,6 +8,9 @@ from typing import Any, Sequence
 
 from services.contract_portfolio import ContractRecord
 from services.contract_v2 import FIELD_LABELS_V2
+from services.contract_display import (
+    financial_cells, normalize_award_method, normalize_contract_type, short_date,
+)
 
 
 _LEGACY_MAP = {
@@ -46,8 +47,8 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str
     rows = []
     for record in records:
         source = record.full_values
-        # Mostrar la información textual registrada; nunca reescribir cifras,
-        # fechas, signos, acentos, mayúsculas o puntuación del origen.
+        # Los originales siguen disponibles en la ficha y en Evidencias del PDF.
+        # Los derivados de esta vista no alteran DatosContratoV2.
         values = (
             {key: source.get(key) or "" for key, _ in FIELD_LABELS_V2}
             if source is not None
@@ -56,10 +57,20 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str
                 for key, _ in FIELD_LABELS_V2
             }
         )
-        row = {
-            label: values[key] if values[key] else "—"
-            for key, label in FIELD_LABELS_V2
-        }
+        row: dict[str, str] = {}
+        for key, label in FIELD_LABELS_V2:
+            literal = values[key]
+            if key == "monto_contrato":
+                row.update(financial_cells(record, literal))
+            elif key == "tipo_contrato":
+                row[label] = normalize_contract_type(literal)
+            elif key == "modalidad_adjudicacion":
+                row[label] = normalize_award_method(literal)
+            elif key in ("fecha_firma_contrato", "fecha_inicio_contractual",
+                         "fecha_termino_contractual"):
+                row[label] = short_date(literal)
+            else:
+                row[label] = literal if literal else "—"
         row["Personas que participan en el contrato"] = participant_cell(
             record.participants
         )
@@ -69,7 +80,5 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str
         row["Observaciones de extracción"] = (
             " | ".join(record.observations) if record.observations else "—"
         )
-        row["Campos extraídos"] = record.coverage
-        row["Estado de extracción"] = record.status_label
         rows.append(row)
     return rows
