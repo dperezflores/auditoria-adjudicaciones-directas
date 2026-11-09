@@ -632,6 +632,10 @@ def render_expedientes(authenticated: bool) -> None:
     st.session_state["ex_v2_known_eligible"] = {
         work_id: tuple(plan.eligible_ids) for work_id, plan in plans.items()
     }
+    # Limpiar claves asociadas a checkboxes sólo AL PRINCIPIO de un rerun.
+    # Hacerlo tras renderizar los checkboxes produce StreamlitAPIException.
+    if st.session_state.pop("ex_v2_reset_after_analysis", False):
+        _clear_selection()
     total_files = sum(f.total for f in folders.values())
     analysed_files = sum(f.complete for f in folders.values())
     pending_files = sum(f.pending for f in folders.values())
@@ -714,5 +718,5 @@ def render_expedientes(authenticated: bool) -> None:
             return
         st.session_state["ex_last_run"] = _analyze(active_work, batch, model)
         st.session_state["ex_last_run_obra_id"] = active_work.id
-        _clear_selection()
+        st.session_state["ex_v2_reset_after_analysis"] = True
         st.rerun()
