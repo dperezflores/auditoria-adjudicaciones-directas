@@ -41,6 +41,55 @@ El siguiente trabajo de Fase 1 será la Pantalla 1 (explorador de árbol), la
 confirmación y el visor documental. En el Paso A **no están implementados**
 los nuevos selectores, barra inferior ni visor de evidencias.
 
+## Fase 1 · Paso B: explorador de dos columnas (rama de desarrollo)
+
+> Se implementa **solo en la rama ui/fase1-explorador**. La aplicación
+> original de Streamlit, publicada desde main, no ha sido modificada.
+> El estado anterior sigue anclado al commit
+> f0329c4118def3459dec8b4da65024709ce91f60.
+
+**Acceso sin Drive ni Sheets:** si sólo se configuraron los secretos de
+autenticación Google, en Expedientes se muestra una **vista previa con
+datos ficticios** claramente etiquetada. No consulta Drive ni Sheets, no
+presenta resultados reales y deshabilita el análisis. Esta vista permite
+evaluar y probar la navegación visual sin dar acceso a expedientes.
+
+**Con Drive y Sheets configurados:**
+- La columna izquierda muestra obras, búsqueda por obra o archivo,
+  filtros Todas / Con pendientes / Completas, progreso por carpeta y
+  documentos desplegables. Las casillas de obra y documento seleccionan
+  sólo archivos pendientes que pasan las reglas actuales de elegibilidad.
+- La columna derecha muestra la obra enfocada, enlace a Drive, tarjetas
+  del Contrato, PUC, Catálogo, Dictamen AD y Notificación AD; la Orden AD
+  aparece cuando existe. "Falta" es informativo y no seleccionable.
+- Se muestra la lista real de archivos, con código documental,
+  ruta relativa, tamaño, fecha, estado y acción. Los archivos no compatibles
+  están separados, sin posibilidad de envío a Gemini.
+- **Ver datos/Revisar** abre un panel inferior de consulta que conserva la
+  función anterior de extracción literal y la eliminación con confirmación
+  ELIMINAR; el visor especializado de evidencias es materia del Paso D.
+- La barra inferior muestra la selección de **una sola obra** y el total
+  de archivos. Pulsar **Analizar con IA** inicia la misma función _analyze
+  utilizada anteriormente, con la validación previa de tipo, tamaños,
+  registro de Drive, huella, extracción vigente, bloqueos y límite de
+  10 documentos por ejecución. CATALOGO.xlsx se importa sin Gemini.
+- La selección queda limitada a una obra: enfocar otra limpia la anterior.
+  Si el usuario marca más de 10 documentos, se procesan sólo los primeros
+  10 y debe iniciar una nueva solicitud para el siguiente lote.
+- **Aún no hay diálogo previo de confirmación ni nuevo panel de progreso.**
+  Esos elementos se implementarán en el Paso C. En el Paso B la pulsación
+  de Analizar inicia el proceso como en la versión original.
+- Ninguna acción de búsqueda, navegación, selección o consulta invoca
+  Gemini. Una falla no provoca reintento automático.
+
+**Principio de equivalencia:** se reutiliza el backend de ui/expedientes.py
+y se añade una función pura services/selection_rules.py para construir
+los estados de selección. tests/test_selection_rules.py incluye un oráculo
+independiente basado en las reglas originales, con casos de análisis
+vigente, solicitud bloqueada, documento desactualizado, formato incompatible
+y límite 10. Ninguna función existente de extracción, caché o almacenamiento
+ha sido reemplazada.
+
 ## Interfaz operativa
 
 La pantalla principal usa la estructura real de la carpeta de Google Drive
