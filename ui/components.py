@@ -101,10 +101,17 @@ def encabezado_app(
     user_email: str,
     on_refresh: Callable[[], None],
 ) -> str:
-    """Devuelve el apartado seleccionado sin consultar Drive automáticamente."""
+    """Encabezado compacto en una banda, como maqueta de referencia PDF."""
+    tab_labels = {
+        "Expedientes": "Expedientes",
+        "Resultados": "Base de datos",
+        "Pruebas de adjudicación": "Pruebas de auditoría",
+    }
     with st.container(key="auditoria_header"):
-        brand, navigation, user = st.columns([2.0, 5.0, 2.2], gap="medium",
-                                             vertical_alignment="center")
+        brand, navigation, root, sync, refresh, account = st.columns(
+            [1.58, 3.2, 1.95, 1.22, 1.7, 0.48],
+            gap="small", vertical_alignment="center",
+        )
         with brand:
             st.markdown(
                 '<div class="aud-brand"><span class="aud-brand-mark">A</span>'
@@ -117,49 +124,51 @@ def encabezado_app(
                 "Navegación", NAVIGATION,
                 selection_mode="single", default=NAVIGATION[0],
                 required=True, key="app_section", label_visibility="collapsed",
-                width="stretch",
+                width="stretch", format_func=lambda key: tab_labels[key],
             )
-        with user:
-            st.markdown(
-                f'<div class="aud-user" title="{escape(user_email, quote=True)}">'
-                f'{icono("user", size=13)} {escape(user_email)}</div>',
-                unsafe_allow_html=True,
-            )
-            st.button(
-                "Cerrar sesión", key="ex_logout_header", type="secondary",
-                on_click=st.logout, use_container_width=True,
-            )
-        st.markdown('<div class="aud-header-foot"></div>', unsafe_allow_html=True)
-        root, last_sync, refresh = st.columns([4.4, 2.5, 2.1], gap="small",
-                                               vertical_alignment="center")
         with root:
-            root_label = root_name if root_name else "Carpeta raíz por cargar"
+            root_label = root_name or (
+                "Vista de demostración" if not ready_drive
+                else "Carpeta por cargar"
+            )
             st.markdown(
-                f'<div class="aud-root-line">{icono("folder", size=15)}'
-                f'<span class="aud-root" title="{escape(root_label, quote=True)}">'
-                f'{escape(root_label)}</span></div>',
+                f'<div class="aud-root-box" title="{escape(root_label, quote=True)}">'
+                f'{icono("folder", size=14)}'
+                f'<span class="aud-root">{escape(root_label)}</span></div>',
                 unsafe_allow_html=True,
             )
-        with last_sync:
+        with sync:
             st.markdown(
-                f'<div class="aud-last-sync">{escape(sincronizacion_local(synced_at))}</div>',
+                f'<span class="aud-last-sync">'
+                f'{escape(sincronizacion_local(synced_at))}</span>',
                 unsafe_allow_html=True,
             )
         with refresh:
             st.button(
-                "Actualizar Google Drive", key="ex_refresh_header",
+                "⟳  Actualizar carpetas", key="ex_refresh_header",
                 type="secondary", on_click=on_refresh,
                 disabled=not (ready_drive and ready_sheets),
                 use_container_width=True,
+                help="Revisar Google Drive y sincronizar registros en Sheets",
             )
-        st.markdown(
-            '<div class="aud-services">'
-            + _service_status("Drive", ready_drive)
-            + _service_status("Sheets", ready_sheets)
-            + _service_status("Gemini", ready_gemini)
-            + '</div>',
-            unsafe_allow_html=True,
-        )
+        with account:
+            with st.popover("☻", help="Cuenta y conexiones"):
+                st.markdown(
+                    f'<div class="aud-account">{escape(user_email)}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="aud-services">'
+                    + _service_status("Drive", ready_drive)
+                    + _service_status("Sheets", ready_sheets)
+                    + _service_status("Gemini", ready_gemini)
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+                st.button(
+                    "Cerrar sesión", key="ex_logout_header", type="secondary",
+                    on_click=st.logout, use_container_width=True,
+                )
     return page or NAVIGATION[0]
 
 
