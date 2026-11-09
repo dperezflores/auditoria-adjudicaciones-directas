@@ -572,15 +572,13 @@ def _render_doc_rows(
 def _toggle_doc_row(work_id: str, doc_id: str, eligible_ids: frozenset[str]) -> None:
     """Sincroniza la selección del renglón con la del árbol de la misma obra."""
     key = f"ex_v2_cb_row_{doc_id}"
-    current = (
-        _selection() if st.session_state.get("ex_v2_selected_work") == work_id else set()
-    )
+    current = _selection()
     if doc_id in eligible_ids:
         if st.session_state.get(key, False):
             current.add(doc_id)
         else:
             current.discard(doc_id)
-    _set_selected(work_id, current)
+    _set_selected(current)
     # Esta clave pertenece al widget que disparó el callback; puede actualizarse
     # en el callback, antes de reconstruir la pantalla.
     st.session_state[key] = doc_id in current
@@ -626,33 +624,33 @@ def _render_right(
     folder = folders[work.id]
     st.markdown(
         f'<div class="aud-breadcrumb">Expedientes / '
-        f'<span class="aud-mono">{escape(work.name)}</span></div>',
+        f'<span class="aud-mono" title="{escape(work.name, quote=True)}">'
+        f'{escape(friendly_work_name(work.name))}</span></div>',
         unsafe_allow_html=True,
     )
     title, link_col, choose_col = st.columns(
-        [4.4, 1.3, 2.3], gap="small", vertical_alignment="center",
+        [5.5, 1.3, 2.05], gap="small", vertical_alignment="center",
     )
     with title:
-        st.markdown(f"## {escape(work.name)}")
+        st.markdown(f"## {escape(friendly_work_name(work.name))}")
         st.caption(_work_summary(folder))
     with link_col:
         url = None if is_demo else _drive_link(work)
         if url:
-            st.link_button("Abrir en Drive", url, use_container_width=True)
+            st.link_button("Abrir carpeta", url, use_container_width=True)
     with choose_col:
         if st.button(
             f"✦ Analizar esta obra ({len(plan.eligible)})",
             key="ex_v2_select_all_focused",
             disabled=not plan.eligible or is_demo,
             type="primary", use_container_width=True,
-            help="Marca los documentos pendientes; la ejecución se inicia en la barra inferior.",
+            help="Marca solo pendientes elegibles; revisa la barra inferior para analizar.",
             on_click=_select_all, args=(work.id, plan.eligible_ids),
         ):
             st.toast("Documentos elegibles seleccionados. Revisa la barra inferior.")
 
     _expected_cards(work, states)
-    st.divider()
-    _render_doc_rows(work, states, plan, is_demo)
+    _render_doc_rows(work, states, plan, tables, is_demo)
 
     if plan.needs_sync or plan.not_registered:
         st.warning(
@@ -671,15 +669,18 @@ def _render_right(
         )
     st.markdown(
         '<div class="aud-legend">'
-        f'{pildora_estado("Analizado")} {pildora_estado("Pendiente")} '
-        f'{pildora_estado("Parcial")} {pildora_estado("Desactualizado")} '
-        f'{pildora_estado("Revisar error")}</div>',
+        f'{pildora_estado("Analizado")} <span>datos ya extraídos</span>'
+        f'{pildora_estado("Pendiente")} <span>sin análisis vigente</span>'
+        f'{pildora_estado("Desactualizado")} <span>el archivo cambió</span>'
+        f'{pildora_estado("Revisar error")} <span>requiere revisión</span>'
+        f'{pildora_estado("POR_IDENTIFICAR")} <span>nombre no reconocido</span>'
+        f'{pildora_estado("Falta")} <span>no está en carpeta</span>'
+        '</div>',
         unsafe_allow_html=True,
     )
     st.caption(
-        "Analizado indica extracción guardada, no cumplimiento legal. "
-        "Los archivos sin extractor deben renombrarse en Drive. "
-        "Los intentos incompletos requieren revisión, no reintento automático."
+        "Un análisis guardado no acredita cumplimiento legal. "
+        "Los intentos incompletos se revisan; no se reintentan automáticamente."
     )
     open_doc_id = st.session_state.get("ex_v2_active_doc")
     open_doc = next((d for d in supported_docs(work) if d.id == open_doc_id), None)
@@ -701,13 +702,6 @@ def _render_right(
 
 def render_expedientes(authenticated: bool) -> None:
     """Nueva presentación de expedientes manteniendo _analyze y la seguridad."""
-    st.markdown('<div class="aud-page-head">EXPLORADOR DE EXPEDIENTES</div>',
-                unsafe_allow_html=True)
-    st.title("Expedientes de obra")
-    st.caption(
-        "Selecciona una obra, revisa sus archivos y prepara únicamente "
-        "los documentos pendientes para analizar."
-    )
     if not authenticated:
         st.error("Se requiere iniciar sesión con una cuenta autorizada.")
         return
@@ -734,87 +728,82 @@ def render_expedientes(authenticated: bool) -> None:
     # Hacerlo tras renderizar los checkboxes produce StreamlitAPIException.
     if st.session_state.pop("ex_v2_reset_after_analysis", False):
         _clear_selection()
-    total_files = sum(f.total for f in folders.values())
-    analysed_files = sum(f.complete for f in folders.values())
-    pending_files = sum(f.pending for f in folders.values())
-    meta, processed, pending = st.columns(3, gap="small")
-    meta.metric("Obras", len(inventory.works))
-    processed.metric("Documentos analizados", f"{analysed_files} / {total_files}")
-    pending.metric("Pendientes o parciales", pending_files)
-
     if not inventory.works:
         st.info("Todavía no se han detectado obras en la carpeta autorizada.")
         return
 
-    # No conservar una selección inválida por cambio de inventario/tipo/esquema.
-    owner = st.session_state.get("ex_v2_selected_work")
-    if owner in plans:
-        allowed = plans[owner].eligible_ids
-        current = _selection()
-        if not current.issubset(allowed):
-            _set_selected(owner, current & allowed)
-    else:
-        st.session_state["ex_v2_selected_ids"] = []
+    # Depurar IDs de documentos retirados o ya analizados sin modificar
+    # otras selecciones válidas de otras obras.
+    permitted_ids = set().union(*(plan.eligible_ids for plan in plans.values()))
+    if not _selection().issubset(permitted_ids):
+        _set_selected(_selection() & permitted_ids)
 
-    left, right = st.columns([1.35, 3.65], gap="medium")
-    with left:
-        focused = _render_tree(inventory, tables, states, folders, plans, is_demo)
-    with right:
-        if focused:
-            _render_right(focused, folders, states, plans, tables, is_demo)
-        else:
-            st.info("Elige una obra o modifica los filtros para consultar el expediente.")
+    with st.container(key="ex_v2_workspace"):
+        left, right = st.columns([1.08, 4.2], gap="small")
+        with left:
+            with st.container(key="ex_v2_sidebar"):
+                focused = _render_tree(inventory, tables, states, folders, plans, is_demo)
+        with right:
+            with st.container(key="ex_v2_detail"):
+                if focused:
+                    _render_right(focused, folders, states, plans, tables, is_demo)
+                else:
+                    st.info("Elige una obra o modifica los filtros para consultar el expediente.")
 
-    owner_id = st.session_state.get("ex_v2_selected_work")
-    active_work = next((w for w in inventory.works if w.id == owner_id), None)
-    plan = plans.get(owner_id)
     selected_ids = _selection()
-    active_docs = (
-        [d for d in plan.eligible if d.id in selected_ids]
-        if active_work and plan else []
-    )
-    catalogue_count = sum(d.mime_type == XLSX_MIME for d in active_docs)
-    requires_gemini = any(d.mime_type != XLSX_MIME for d in active_docs)
+    groups = [
+        (work, [doc for doc in plans[work.id].eligible if doc.id in selected_ids])
+        for work in inventory.works
+    ]
+    groups = [(work, docs) for work, docs in groups if docs]
+    active_docs = [doc for _, docs in groups for doc in docs]
+    batch_total = active_docs[:MAX_BATCH]
+    catalogue_count = sum(d.mime_type == XLSX_MIME for d in batch_total)
+    requires_gemini = any(d.mime_type != XLSX_MIME for d in batch_total)
     gemini = st.secrets.get("gemini", {})
     model = gemini.get("model") or DEFAULT_MODEL
-    disabled = (
-        is_demo or not active_docs
-        or (requires_gemini and not gemini.get("api_key"))
+    disabled = is_demo or not batch_total or (
+        requires_gemini and not gemini.get("api_key")
     )
-    # Un solo expediente por ejecución, como en la aplicación original.
-    # La función de la barra no ejecuta IA por sí misma; marca intención.
     st.markdown('<div class="aud-space-for-bar"></div>', unsafe_allow_html=True)
     barra_seleccion(
-        cantidad=len(active_docs),
-        obras=1 if active_docs else 0,
-        tamano_mb=sum(doc.size_bytes for doc in active_docs) / 1_000_000,
+        cantidad=len(active_docs), obras=len(groups),
+        tamano_mb=sum(doc.size_bytes for doc in batch_total) / 1_000_000,
         catalogos=catalogue_count,
-        al_limpiar=_clear_selection,
-        al_analizar=_request_analysis,
+        al_limpiar=_clear_selection, al_analizar=_request_analysis,
         deshabilitado=disabled,
     )
-    if active_docs and len(active_docs) > MAX_BATCH:
-        st.info(
-            f"Hay {len(active_docs)} documentos seleccionados. "
-            f"Se procesarán los primeros {MAX_BATCH} en la próxima ejecución; "
-            "los restantes quedan para una nueva solicitud."
-        )
-    if is_demo:
+    if len(active_docs) > MAX_BATCH:
         st.caption(
-            "Modo de diseño sin credenciales Drive/Sheets. "
-            "Las acciones de análisis y los datos de evidencia están desactivados."
+            f"Se seleccionaron {len(active_docs)} documentos. "
+            f"Se procesarán como máximo {MAX_BATCH} en esta ejecución."
         )
 
-    # Revalidar todo en el script principal antes de invocar el backend.
     if st.session_state.pop("ex_v2_request_analysis", False):
-        if disabled or is_demo or not active_work or not plan:
+        if disabled or is_demo:
             st.warning("No hay documentos habilitados para esta ejecución.")
             return
-        batch = active_docs[:MAX_BATCH]
-        if not batch:
-            st.warning("No hay documentos pendientes para procesar.")
-            return
-        st.session_state["ex_last_run"] = _analyze(active_work, batch, model)
-        st.session_state["ex_last_run_obra_id"] = active_work.id
+        # La regla de máximo diez aplica GLOBALMENTE. Se llaman los extractores
+        # actuales de cada obra por separado, preservando ID, caché y bloqueo.
+        remaining = MAX_BATCH
+        log = []
+        for work, docs in groups:
+            if remaining <= 0:
+                break
+            selected_batch = docs[:remaining]
+            if not selected_batch:
+                continue
+            remaining -= len(selected_batch)
+            records = _analyze(work, selected_batch, model)
+            for row in records:
+                log.append({"Obra": friendly_work_name(work.name), **row})
+        st.session_state["ex_v2_last_run"] = log
         st.session_state["ex_v2_reset_after_analysis"] = True
         st.rerun()
+
+    if st.session_state.get("ex_v2_last_run") and not is_demo:
+        with st.expander("Resultado de la última ejecución", expanded=False):
+            st.dataframe(
+                pd.DataFrame(st.session_state["ex_v2_last_run"]),
+                hide_index=True, use_container_width=True,
+            )
