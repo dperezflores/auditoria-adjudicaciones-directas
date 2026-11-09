@@ -312,6 +312,7 @@ def render_results() -> None:
     )
 
     st.markdown("#### Listado de obras y contratos")
+    st.caption("Versión de vista: monto único v2 · Sin cálculos de IVA")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
         "Las modalidades y las fechas se muestran normalizadas (DD/MM/AAAA). "
@@ -335,7 +336,7 @@ def render_results() -> None:
         height=min(520, 80 + len(filtered) * 38),
         selection_mode="single-row",
         on_select="rerun",
-        key="results_contract_table",
+        key="results_contract_table_v2_monto_unico",
         column_config={
             "Obra o servicio": st.column_config.TextColumn(width="large"),
             "Número de contrato": st.column_config.TextColumn(width="medium"),
