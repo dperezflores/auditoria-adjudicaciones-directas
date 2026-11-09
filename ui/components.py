@@ -173,10 +173,7 @@ def barra_seleccion(
     al_analizar: Callable[[], None],
     deshabilitado: bool = False,
 ) -> None:
-    """Componente listo para la Pantalla 1 (se conectará en el Paso B).
-
-    No inicia ninguna acción a menos que se pulse expresamente el botón.
-    """
+    """Barra de selección con acción explícita; jamás ejecuta IA al renderizar."""
     with st.container(key="ex_barra_seleccion"):
         if cantidad <= 0:
             st.caption(
@@ -184,6 +181,8 @@ def barra_seleccion(
                 "Los documentos ya analizados se omiten solos."
             )
             return
+        st.markdown('<span class="aud-bar-active" aria-hidden="true"></span>',
+                    unsafe_allow_html=True)
         summary, clear, run = st.columns([5, 1.7, 2.5],
                                           gap="small", vertical_alignment="center")
         with summary:
