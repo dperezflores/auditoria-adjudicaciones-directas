@@ -147,3 +147,298 @@ code, pre {font-family:var(--aud-mono);}
   .st-key-auditoria_header .aud-root {font-size:10px;}
   .st-key-ex_barra_seleccion {padding:9px 12px;}
 }
+
+
+/* ===============================================================
+   Fidelidad de Propuesta A (PDF, página 1) — Pasada visual del Paso B
+   =============================================================== */
+
+/* El diseño aprobado usa el ancho completo y comienza bajo una única banda. */
+[data-testid="stMainBlockContainer"] {
+  max-width:100% !important;
+  padding:0.45rem 0.7rem 5.8rem !important;
+}
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] {
+  gap:0.5rem;
+}
+.st-key-auditoria_header {
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  margin:-.45rem -.7rem 0 !important;
+  padding:6px 13px !important;
+  min-height:48px;
+  border-bottom:1px solid #E2E5E9 !important;
+}
+.st-key-auditoria_header [data-testid="stHorizontalBlock"] {gap:.3rem !important;}
+.st-key-auditoria_header .aud-brand {min-height:33px;gap:6px;}
+.st-key-auditoria_header .aud-brand-mark {
+  width:25px;height:25px;min-width:25px;
+  font-size:12px;border-radius:5px;
+}
+.st-key-auditoria_header .aud-brand-title {font-size:13px;line-height:1.15;}
+.st-key-auditoria_header .aud-brand-subtitle {font-size:9px;line-height:1.2;}
+.st-key-auditoria_header .aud-root-box {
+  display:flex;align-items:center;gap:5px;
+  background:#F9FAFB;border:1px solid var(--aud-border);
+  padding:7px 8px;border-radius:6px;min-width:0;height:32px;
+}
+.st-key-auditoria_header .aud-root {
+  font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.st-key-auditoria_header .aud-last-sync {
+  white-space:nowrap;font-size:10px;color:var(--aud-dim);
+}
+.st-key-auditoria_header button {
+  min-height:30px !important;
+  padding:4px 8px !important;
+  border-radius:6px !important;
+  font-size:11px !important;
+  white-space:nowrap;
+}
+.st-key-app_section button {
+  background:transparent !important;border-color:transparent !important;
+  font-size:11px !important;font-weight:600;
+  white-space:nowrap;
+}
+.st-key-app_section button[aria-pressed="true"] {
+  background:#E8EEFC !important;
+  color:#2046BE !important;
+}
+.st-key-ex_refresh_header button {
+  border:1px solid #D5DBE3 !important;background:#fff !important;
+  font-weight:600;
+}
+.st-key-ex_logout_header button {
+  border:1px solid #D5DBE3 !important;background:#fff !important;
+}
+.st-key-auditoria_header .aud-account {font-size:12px;margin-bottom:9px;}
+.st-key-auditoria_header .aud-services {margin:4px 0 10px;justify-content:flex-start;}
+
+/* Dos columnas sin cabeceras ni métricas sobrantes. */
+.st-key-ex_v2_workspace {margin-top:0 !important;}
+.st-key-ex_v2_workspace > div[data-testid="stVerticalBlock"] {gap:0 !important;}
+.st-key-ex_v2_workspace div[data-testid="stHorizontalBlock"] {gap:.55rem;}
+.st-key-ex_v2_sidebar {
+  background:#fff;
+  min-height:78vh;
+  padding:12px 8px 36px 2px;
+  border-right:1px solid #E0E4E9;
+}
+.st-key-ex_v2_detail {padding:8px 9px 26px 12px;min-width:0;}
+.st-key-ex_v2_sidebar > div[data-testid="stVerticalBlock"] {gap:5px;}
+.st-key-ex_v2_sidebar input {
+  height:31px;min-height:31px;border-radius:7px;
+  font-size:11px;padding:5px 9px;
+}
+.st-key-ex_v2_sidebar .aud-sidebar-heading {
+  display:flex;justify-content:space-between;align-items:center;
+  gap:6px;font-size:12px;color:#1D2632;padding:2px 2px 7px;
+}
+.st-key-ex_v2_sidebar .aud-sidebar-heading strong {font-size:12px;white-space:nowrap;}
+.st-key-ex_v2_sidebar .aud-sidebar-heading span {
+  font-size:10px;color:#697380;text-align:right;
+}
+.st-key-ex_v2_sidebar [data-testid="stSegmentedControl"] button {
+  min-height:25px !important;padding:3px 8px !important;
+  font-size:10px !important;border-radius:999px;
+}
+.st-key-ex_v2_sidebar [data-testid="stSegmentedControl"] {
+  margin-bottom:6px;
+}
+.st-key-ex_v2_sidebar .aud-sidebar-filters {height:0;display:none;}
+
+/* El árbol se compone de pequeñas filas, no de tarjetas amplias. */
+[class*="st-key-ex_v2_work_"] {
+  margin:0 0 2px !important;
+  padding:3px 4px 4px !important;
+  border:0 !important;border-radius:7px;
+  background:transparent;
+}
+[class*="st-key-ex_v2_work_"]:has(.aud-tree-active) {background:#E8EEFC;}
+[class*="st-key-ex_v2_work_"] > div[data-testid="stVerticalBlock"] {
+  gap:1px !important;
+}
+[class*="st-key-ex_v2_work_"] [data-testid="stHorizontalBlock"] {gap:.2rem !important;}
+[class*="st-key-ex_v2_work_"] button {
+  border:0 !important;background:transparent;
+  min-height:26px !important;padding:3px 3px !important;
+  font-size:10.5px !important;font-weight:500 !important;
+  text-align:left;justify-content:flex-start;
+  white-space:normal;
+  line-height:1.12 !important;
+}
+[class*="st-key-ex_v2_work_"]:has(.aud-tree-active) button {
+  color:#2048BA !important;font-weight:650 !important;
+}
+[class*="st-key-ex_v2_work_"] button:hover {background:#E6ECF7 !important;}
+[class*="st-key-ex_v2_work_"] [data-testid="stCheckbox"] {margin:0 !important;}
+[class*="st-key-ex_v2_work_"] [data-testid="stCheckbox"] label {min-height:24px !important;}
+[class*="st-key-ex_v2_work_"] [data-testid="stCheckbox"] input {height:auto;}
+.aud-tree-subtitle {color:#66727D;font-size:10px;margin:0 0 2px 32px;line-height:1.2;}
+.aud-tree-new {
+  color:#234CB9;background:#E7EEFE;border-radius:10px;
+  padding:2px 5px;font-size:9px;margin-left:4px;
+}
+.aud-tree-partial {font-size:9px;color:#7A5200;margin:2px 0 2px 33px;}
+[class*="st-key-ex_v2_tree_"] {
+  border-left:1px solid #DCE1E7;
+  margin:3px 0 2px 29px;
+  padding-left:5px;
+}
+[class*="st-key-ex_v2_tree_"] > div[data-testid="stVerticalBlock"] {gap:0 !important;}
+[class*="st-key-ex_v2_treefile_"] {
+  border-radius:5px;
+  min-height:28px;
+  padding:2px 2px;
+}
+[class*="st-key-ex_v2_treefile_"]:hover {background:#F4F7FE;}
+[class*="st-key-ex_v2_treefile_"] [data-testid="stHorizontalBlock"] {gap:1px !important;}
+[class*="st-key-ex_v2_treefile_"] [data-testid="stCheckbox"] label {min-height:23px !important;}
+.aud-tree-doc {
+  font-size:10.5px;line-height:1.25;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;
+}
+.aud-tree-status {display:inline-flex;color:#66727D;align-items:center;}
+.aud-tree-status--analizado {color:#187448;}
+.aud-tree-status--pendiente {color:#AD720C;}
+.aud-tree-status--desactualizado {color:#2455BF;}
+.aud-tree-status--error {color:#B3261E;}
+.aud-tree-missing {
+  font-size:10.5px;padding:5px 4px 5px 20px;
+  color:#8D96A1;display:flex;justify-content:space-between;
+}
+
+/* Encabezado del expediente y tarjetas pequeñas en una sola fila. */
+.st-key-ex_v2_detail .aud-breadcrumb {
+  font-size:10px;margin:1px 0 9px;
+}
+.st-key-ex_v2_detail h2 {
+  font-size:21px !important;line-height:1.2;
+  font-weight:700;margin:2px 0 5px !important;letter-spacing:-.02em;
+}
+.st-key-ex_v2_detail [data-testid="stCaptionContainer"] {
+  font-size:11px;line-height:1.3;color:#65717E;
+}
+.st-key-ex_v2_detail button {
+  font-size:10.5px !important;min-height:31px !important;
+  padding:5px 8px !important;border-radius:6px !important;
+}
+.st-key-ex_v2_detail .aud-eyebrow {
+  font-size:9px;letter-spacing:.06em;margin:11px 0 5px;
+}
+.aud-tiles {
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:7px;margin-bottom:12px;
+}
+.aud-file-tile {
+  display:flex;flex-direction:column;align-items:flex-start;
+  justify-content:center;gap:10px;
+  min-height:70px;
+  padding:10px 10px;border:1px solid #DFE3E8;
+  border-radius:7px;background:white;min-width:0;
+}
+.aud-file-tile-label {
+  font-size:11px;font-weight:650;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:100%;
+}
+.aud-optional-document {
+  display:flex;gap:8px;align-items:center;
+  font-size:10px;color:#66717E;
+  margin:-6px 0 8px;
+}
+.aud-pill {font-size:10px !important;line-height:14px !important;padding:3px 7px !important;gap:3px;}
+.aud-pill svg {width:11px !important;height:11px !important;}
+
+/* Tabla sin padding extra y con colores de selección de la maqueta. */
+.st-key-ex_v2_files_panel {
+  border:1px solid #E2E6EB;background:white;
+  border-radius:8px;padding:8px 10px 10px;
+  margin:3px 0 7px;min-width:0;
+}
+.st-key-ex_v2_files_panel > div[data-testid="stVerticalBlock"] {gap:0 !important;}
+.st-key-ex_v2_files_panel .aud-files-heading {
+  display:flex;justify-content:space-between;align-items:center;
+  gap:8px;padding:1px 1px 9px;border-bottom:1px solid #E5E8EE;
+  color:#232B36;font-size:12px;
+}
+.aud-files-heading span {font-size:10px;color:#697583;font-weight:400;}
+.st-key-ex_v2_files_panel .aud-th {
+  font-size:9px;color:#6B7683;font-weight:650;letter-spacing:.03em;
+}
+.st-key-ex_v2_files_panel [data-testid="stHorizontalBlock"] {gap:.30rem !important;}
+[class*="st-key-ex_v2_file_"] {
+  border-top:1px solid #ECEEF2;
+  min-height:40px;
+  display:block;padding:4px 3px !important;
+}
+[class*="st-key-ex_v2_file_"]:has(.aud-row-selected) {background:#F2F5FE;}
+[class*="st-key-ex_v2_file_"] > div[data-testid="stVerticalBlock"] {gap:0 !important;}
+[class*="st-key-ex_v2_file_"] [data-testid="stCheckbox"] label {
+  min-height:25px !important;
+}
+[class*="st-key-ex_v2_file_"] button {
+  min-height:25px !important;padding:2px 4px !important;
+  font-size:10px !important;border:1px solid #DCE0E5 !important;
+  background:#fff !important;
+}
+.aud-doc-name {font-size:10.5px;color:#252F3B;font-weight:650;}
+.aud-file-path {font-size:9.5px !important;font-weight:500;line-height:1.2;}
+.aud-pages,.aud-last-analysis {font-size:10px;color:#66717D;}
+.aud-other-heading {font-size:12px;font-weight:650;padding-top:10px;margin-bottom:5px;}
+.aud-unrecognized {padding:5px 9px !important;font-size:10px;}
+.aud-legend {
+  display:flex;align-items:center;gap:5px 8px;
+  flex-wrap:wrap;font-size:9px;color:#697583;margin:8px 0 5px;
+}
+.aud-legend .aud-pill {margin-left:3px;}
+.aud-legend + [data-testid="stCaptionContainer"] {font-size:10px;}
+
+/* Barra fija: insignia circular, cifras y dos acciones a la derecha. */
+.st-key-ex_barra_seleccion {
+  height:53px;min-height:53px;
+  display:flex;align-items:center;
+  padding:8px 14px !important;gap:10px;
+}
+.st-key-ex_barra_seleccion > div[data-testid="stVerticalBlock"] {width:100%;gap:0 !important;}
+.st-key-ex_barra_seleccion [data-testid="stHorizontalBlock"] {gap:7px !important;}
+.st-key-ex_barra_seleccion .aud-count-circle {
+  display:grid;place-items:center;width:25px;height:25px;
+  background:#fff;border-radius:50%;color:#152231;
+  font-weight:750;font-size:12px;
+}
+.st-key-ex_barra_seleccion .aud-bottom-title {
+  font-size:11px;color:white;font-weight:650;white-space:nowrap;
+}
+.st-key-ex_barra_seleccion .aud-bottom-info {
+  font-size:10px;color:#A9B8C9;
+}
+.st-key-ex_barra_seleccion button {
+  min-height:32px !important;padding:4px 7px !important;
+  font-size:10px !important;border-radius:6px !important;
+}
+.st-key-ex_limpiar_barra button {
+  background:transparent !important;
+  border:1px solid #526375 !important;color:white !important;
+}
+.st-key-ex_analizar_barra button {
+  background:#fff !important;color:#18212B !important;
+  border:1px solid #fff !important;
+  font-weight:700 !important;
+}
+.st-key-ex_analizar_barra button:disabled {opacity:.65;color:#5B6573 !important;}
+.aud-space-for-bar {height:56px !important;}
+
+/* Fallback adaptable; las cinco tarjetas sólo se envuelven cuando no caben. */
+@media (max-width:1100px) {
+  .aud-tiles {grid-template-columns:repeat(3,minmax(0,1fr));}
+  .aud-file-tile {min-height:58px;}
+  .st-key-ex_v2_detail h2 {font-size:18px !important;}
+}
+@media (max-width:760px) {
+  [data-testid="stMainBlockContainer"] {padding:.5rem .45rem 5.4rem !important;}
+  .st-key-ex_v2_sidebar {min-height:0;border-right:0;border-bottom:1px solid #DFE3E8;}
+  .aud-tiles {grid-template-columns:repeat(2,minmax(0,1fr));}
+  .st-key-ex_barra_seleccion {height:auto;min-height:59px;}
+  .st-key-ex_barra_seleccion .aud-bottom-info {display:none;}
+}
