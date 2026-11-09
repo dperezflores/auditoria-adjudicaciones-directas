@@ -257,42 +257,48 @@ def _render_tree(
     plans: dict[str, SelectionPlan],
     is_demo: bool,
 ) -> WorkRecord | None:
+    """Árbol compacto tipo explorador, con una línea por documento."""
     works = inventory.works
-    st.markdown("### Obras en la carpeta")
-    st.caption(
-        f"{len(works)} obras · "
-        f"{sum(folders[w.id].pending for w in works)} documentos por analizar"
+    count = len(works)
+    pending_works = sum(
+        folders[w.id].label not in ("Analizada", "Sin PDF") for w in works
+    )
+    st.markdown(
+        f'<div class="aud-sidebar-heading">'
+        f'<strong>Obras en la carpeta</strong>'
+        f'<span>{count} obras · {sum(folders[w.id].pending for w in works)} por analizar</span>'
+        f'</div>', unsafe_allow_html=True,
     )
     search = st.text_input(
         "Buscar obra o archivo", key="ex_v2_search",
-        placeholder="Nombre, número o PDF...",
+        placeholder="⌕  Buscar obra o archivo",
         label_visibility="collapsed",
     ).casefold().strip()
     complete = sum(folders[w.id].label == "Analizada" for w in works)
-    to_review = len(works) - complete
     labels = {
-        "Todas": f"Todas · {len(works)}",
-        "Con pendientes": f"Pendientes · {to_review}",
+        "Todas": f"Todas · {count}",
+        "Con pendientes": f"Con pendientes · {pending_works}",
         "Completas": f"Completas · {complete}",
     }
+    st.markdown('<div class="aud-sidebar-filters"></div>', unsafe_allow_html=True)
     mode = st.segmented_control(
         "Filtrar expedientes", tuple(labels),
         key="ex_v2_filter", default="Todas",
         format_func=lambda name: labels[name],
         label_visibility="collapsed",
     ) or "Todas"
-
     visible = [
         w for w in works
         if (
             not search or search in w.name.casefold()
+            or search in friendly_work_name(w.name).casefold()
             or any(search in d.name.casefold() for d in (*w.pdfs, *w.other_files))
         )
         and (
             mode == "Todas"
             or (mode == "Completas" and folders[w.id].label == "Analizada")
-            or (mode == "Con pendientes" and folders[w.id].total > 0
-                and folders[w.id].label != "Analizada")
+            or (mode == "Con pendientes"
+                and folders[w.id].label not in ("Analizada", "Sin PDF"))
         )
     ]
     if not visible:
@@ -302,8 +308,6 @@ def _render_tree(
     visible_ids = {w.id for w in visible}
     current_id = st.session_state.get("ex_v2_focus_work")
     if current_id not in visible_ids:
-        # Si cambiamos de filtro, la selección previa no puede usarse bajo
-        # una obra distinta o invisible.
         _focus_work(visible[0].id)
         current_id = visible[0].id
 
@@ -311,87 +315,101 @@ def _render_tree(
     for work in visible:
         folder = folders[work.id]
         plan = plans[work.id]
-        count = len(plan.eligible)
+        selected_for_work = _selection() & plan.eligible_ids
         all_selected = (
-            st.session_state.get("ex_v2_selected_work") == work.id
-            and bool(count) and plan.eligible_ids.issubset(_selection())
+            bool(plan.eligible_ids) and plan.eligible_ids.issubset(_selection())
         )
-        with st.container(border=True, key=f"ex_v2_work_{work.id}"):
-            a, b, c = st.columns([0.65, 0.65, 5.3], gap="small",
-                                 vertical_alignment="center")
-            with a:
-                work_key = f"ex_v2_work_cb_{work.id}"
-                if work_key not in st.session_state:
-                    st.session_state[work_key] = all_selected
+        with st.container(key=f"ex_v2_work_{work.id}"):
+            marker = "aud-tree-active" if work.id == current_id else "aud-tree-normal"
+            st.markdown(f'<span class="{marker}" aria-hidden="true"></span>',
+                        unsafe_allow_html=True)
+            check, expand_col, title = st.columns(
+                [0.48, 0.58, 5.2], gap="small", vertical_alignment="center"
+            )
+            with check:
+                key = f"ex_v2_work_cb_{work.id}"
+                if key not in st.session_state:
+                    st.session_state[key] = all_selected
                 st.checkbox(
-                    f"Seleccionar documentos elegibles de {work.name}",
-                    key=work_key, label_visibility="collapsed",
-                    disabled=not count,
+                    f"Seleccionar pendientes de {friendly_work_name(work.name)}",
+                    key=key, label_visibility="collapsed",
+                    disabled=not plan.eligible_ids,
                     on_change=_toggle_work,
                     args=(work.id, plan.eligible_ids),
                 )
-            with b:
+            with expand_col:
                 st.button(
-                    "▾" if work.id in expanded else "▸",
+                    "⌄" if work.id in expanded else "›",
                     key=f"ex_v2_expand_{work.id}",
                     help="Desplegar documentos",
                     on_click=_toggle_expand, args=(work.id,),
+                    type="tertiary",
                 )
-            with c:
+            with title:
                 st.button(
-                    f"📁 {work.name}", key=f"ex_v2_focus_{work.id}",
-                    help="Abrir expediente", use_container_width=True,
+                    f"▱  {friendly_work_name(work.name)}",
+                    key=f"ex_v2_focus_{work.id}",
+                    help=work.name,
+                    use_container_width=True,
                     type="primary" if work.id == current_id else "tertiary",
                     on_click=_focus_work, args=(work.id,),
                 )
-            st.caption(_work_summary(folder, compact=True))
-            selected_for_work = (
-                _selection() if st.session_state.get("ex_v2_selected_work") == work.id
-                else set()
+            st.markdown(
+                f'<div class="aud-tree-subtitle">{escape(_work_summary(folder, compact=True))}'
+                + (' <span class="aud-tree-new">Nueva</span>'
+                   if _folder_has_no_attempt(work, tables, folder) and folder.total
+                   else '')
+                + '</div>',
+                unsafe_allow_html=True,
             )
-            if selected_for_work and not plan.eligible_ids.issubset(selected_for_work):
-                st.caption("– Selección parcial")
-            if _folder_has_no_attempt(work, tables, folder) and folder.total:
-                st.markdown(pildora_estado("Nueva"), unsafe_allow_html=True)
-
+            if selected_for_work and not all_selected:
+                st.markdown(
+                    '<div class="aud-tree-partial">– Selección parcial</div>',
+                    unsafe_allow_html=True,
+                )
             if work.id not in expanded:
                 continue
             with st.container(key=f"ex_v2_tree_{work.id}"):
                 for doc in supported_docs(work):
                     decision = plan.decisions[doc.id]
-                    left, middle, right = st.columns([0.68, 4.3, 0.9], gap="small",
-                                                      vertical_alignment="center")
-                    with left:
-                        if decision.selectable:
-                            key = f"ex_v2_cb_{doc.id}"
-                            if key not in st.session_state:
-                                st.session_state[key] = doc.id in selected_for_work
-                            st.checkbox(
-                                f"Seleccionar {doc.name}", key=key,
-                                label_visibility="collapsed",
-                                on_change=_toggle_document,
-                                args=(work.id, doc.id, plan.eligible_ids),
+                    state = _state_for(doc, states)
+                    with st.container(key=f"ex_v2_treefile_{doc.id}"):
+                        cb, name, status = st.columns(
+                            [0.58, 4.6, 0.55], gap="small", vertical_alignment="center"
+                        )
+                        with cb:
+                            if decision.selectable:
+                                key = f"ex_v2_cb_{doc.id}"
+                                if key not in st.session_state:
+                                    st.session_state[key] = doc.id in selected_for_work
+                                st.checkbox(
+                                    f"Seleccionar {doc.name}", key=key,
+                                    label_visibility="collapsed",
+                                    on_change=_toggle_document,
+                                    args=(work.id, doc.id, plan.eligible_ids),
+                                )
+                            else:
+                                st.markdown('<span class="aud-tree-spacer"></span>',
+                                            unsafe_allow_html=True)
+                        with name:
+                            st.markdown(
+                                f'<div class="aud-tree-doc" title="{escape(_full_name(doc), quote=True)}">'
+                                f'{escape(document_label(doc))}</div>',
+                                unsafe_allow_html=True,
                             )
-                        else:
-                            st.markdown("·")
-                    with middle:
-                        st.caption(
-                            f"{'└' if doc.relative_path else '·'} "
-                            f"{code_from_filename(doc.name, doc.mime_type) or 'SIN TIPO'} "
-                            f"· {_full_name(doc)}"
-                        )
-                    with right:
-                        st.markdown(
-                            pildora_estado(_state_for(doc, states)),
-                            unsafe_allow_html=True,
-                        )
+                        with status:
+                            st.markdown(_state_icon(state), unsafe_allow_html=True)
                 existing = {
                     code_from_filename(d.name, d.mime_type)
                     for d in supported_docs(work)
                 }
                 for code, label in EXPECTED_DOCUMENTS:
                     if code not in existing:
-                        st.caption(f"· {label} · Falta")
+                        st.markdown(
+                            f'<div class="aud-tree-missing">{escape("—  "+label)}'
+                            f'<span>Falta</span></div>',
+                            unsafe_allow_html=True,
+                        )
     return next((w for w in visible if w.id == current_id), visible[0])
 
 
