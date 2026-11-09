@@ -231,10 +231,11 @@ def _load_or_preview() -> tuple[DriveInventory, dict, dict, bool] | None:
     """El modo demostración no consulta APIs ni abre documentos reales."""
     if not is_configured(st.secrets) or not storage_configured(st.secrets):
         inventory, tables, statuses = visual_preview()
-        st.info(
-            "**Vista previa de diseño — documentos ficticios.** No hay conexión "
-            "a Drive ni Google Sheets. Puedes explorar, buscar y seleccionar, "
-            "pero se han deshabilitado análisis, exportaciones y enlaces reales."
+        st.markdown(
+            '<div class="aud-demo-note">'
+            'Vista previa · documentos ficticios. '
+            'Sin conexión a Drive, Sheets ni Gemini; el análisis está deshabilitado.'
+            '</div>', unsafe_allow_html=True,
         )
         return inventory, tables, statuses, True
     if "ex_inventory" not in st.session_state or "ex_status_tables" not in st.session_state:
@@ -696,16 +697,6 @@ def _render_right(
         st.divider()
         _doc_detail_panel(work, open_doc, tables, states, plan, is_demo)
 
-    if (
-        st.session_state.get("ex_last_run_obra_id") == work.id
-        and st.session_state.get("ex_last_run")
-        and not is_demo
-    ):
-        st.markdown("#### Resultado de la última ejecución")
-        st.dataframe(
-            pd.DataFrame(st.session_state["ex_last_run"]),
-            hide_index=True, use_container_width=True,
-        )
 
 
 def render_expedientes(authenticated: bool) -> None:
