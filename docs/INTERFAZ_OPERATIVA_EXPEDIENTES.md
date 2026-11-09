@@ -1,5 +1,46 @@
 # AuditorIA — Expedientes y análisis documental
 
+## Fase 1 · Paso A: encabezado y navegación (rama de desarrollo)
+
+> Este apartado describe los cambios **solamente en la rama `ui/fase1-explorador`**.
+> La aplicación publicada desde `main` permanece sin modificar hasta su aprobación.
+
+La interfaz muestra una barra superior con **Expedientes, Resultados y Pruebas de adjudicación**,
+con Expedientes como opción inicial. El encabezado conserva la identidad del
+usuario autorizado, **Cerrar sesión**, la carpeta raíz de Drive, la hora de
+sincronización presentada en horario de Guanajuato, los tres indicadores de
+servicio y **Actualizar Google Drive**. Mientras no se haya abierto Expedientes
+ni se haya pulsado Actualizar, la barra indica **Carpeta raíz por cargar** /
+**Sin revisar**, sin consultar Drive de forma invisible.
+
+Durante este Paso A, **la pantalla Expedientes conserva su diseño y sus
+controles anteriores**. El botón Actualizar también permanece dentro de
+Expedientes; ambas ubicaciones llaman al mismo sincronizador con bloqueo de
+escritura. Los métodos de análisis, extracción y eliminación no cambian y no
+se llaman al navegar por las tres secciones. La barra lateral queda colapsada.
+
+La interfaz usa tipografía IBM Plex Sans/Mono, la paleta aprobada de
+AuditorIA y los estilos en `ui/theme.py` y `ui/styles.css`. Si las
+fuentes externas no cargan, se utilizan fuentes del sistema.
+
+Para ejecutar la rama **localmente** con credenciales de prueba y autorización
+existentes:
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+Para ejecutar las pruebas sin conexión a Drive ni Gemini:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+El siguiente trabajo de Fase 1 será la Pantalla 1 (explorador de árbol), la
+confirmación y el visor documental. En el Paso A **no están implementados**
+los nuevos selectores, barra inferior ni visor de evidencias.
+
 ## Interfaz operativa
 
 La pantalla principal usa la estructura real de la carpeta de Google Drive
