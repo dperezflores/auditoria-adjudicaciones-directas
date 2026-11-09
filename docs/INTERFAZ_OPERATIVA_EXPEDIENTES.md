@@ -1,5 +1,110 @@
 # AuditorIA — Expedientes y análisis documental
 
+## Fase 1 · Paso A: encabezado y navegación (rama de desarrollo)
+
+> Este apartado describe los cambios **solamente en la rama `ui/fase1-explorador`**.
+> La aplicación publicada desde `main` permanece sin modificar hasta su aprobación.
+
+La interfaz muestra una barra superior con **Expedientes, Resultados y Pruebas de adjudicación**,
+con Expedientes como opción inicial. El encabezado conserva la identidad del
+usuario autorizado, **Cerrar sesión**, la carpeta raíz de Drive, la hora de
+sincronización presentada en horario de Guanajuato, los tres indicadores de
+servicio y **Actualizar Google Drive**. Mientras no se haya abierto Expedientes
+ni se haya pulsado Actualizar, la barra indica **Carpeta raíz por cargar** /
+**Sin revisar**, sin consultar Drive de forma invisible.
+
+Durante este Paso A, **la pantalla Expedientes conserva su diseño y sus
+controles anteriores**. El botón Actualizar también permanece dentro de
+Expedientes; ambas ubicaciones llaman al mismo sincronizador con bloqueo de
+escritura. Los métodos de análisis, extracción y eliminación no cambian y no
+se llaman al navegar por las tres secciones. La barra lateral queda colapsada.
+
+La interfaz usa tipografía IBM Plex Sans/Mono, la paleta aprobada de
+AuditorIA y los estilos en `ui/theme.py` y `ui/styles.css`. Si las
+fuentes externas no cargan, se utilizan fuentes del sistema.
+
+Para ejecutar la rama **localmente** con credenciales de prueba y autorización
+existentes:
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+Para ejecutar las pruebas sin conexión a Drive ni Gemini:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+El siguiente trabajo de Fase 1 será la Pantalla 1 (explorador de árbol), la
+confirmación y el visor documental. En el Paso A **no están implementados**
+los nuevos selectores, barra inferior ni visor de evidencias.
+
+## Fase 1 · Paso B: explorador de dos columnas (rama de desarrollo)
+
+> Se implementa **solo en la rama ui/fase1-explorador**. La aplicación
+> original de Streamlit, publicada desde main, no ha sido modificada.
+> El estado anterior sigue anclado al commit
+> f0329c4118def3459dec8b4da65024709ce91f60.
+
+**Acceso sin Drive ni Sheets:** si sólo se configuraron los secretos de
+autenticación Google, en Expedientes se muestra una **vista previa con
+datos ficticios** claramente etiquetada. No consulta Drive ni Sheets, no
+presenta resultados reales y deshabilita el análisis. Esta vista permite
+evaluar y probar la navegación visual sin dar acceso a expedientes.
+
+**Con Drive y Sheets configurados:**
+- La columna izquierda muestra obras, búsqueda por obra o archivo,
+  filtros Todas / Con pendientes / Completas, progreso por carpeta y
+  documentos desplegables. Las casillas de obra y documento seleccionan
+  sólo archivos pendientes que pasan las reglas actuales de elegibilidad.
+- La columna derecha muestra la obra enfocada, enlace a Drive y cinco
+  tarjetas **en una fila**: Contrato, PUC, **Presupuesto** (etiqueta visual
+  del CATALOGO.xlsx), Dictamen AD y Notificación AD. La Orden AD se muestra
+  como complementaria cuando existe. "Falta" es informativo.
+  Los títulos de carpeta se presentan de forma legible sin cambiar sus IDs.
+- La tabla muestra Documento, Archivo, Págs., Estado, Último análisis y Acción.
+  No se almacenan cantidades de páginas en el inventario actual: la columna
+  indica **—** si no hay un dato documental verificable; únicamente en la
+  demostración sintética se muestran cantidades inventadas de ejemplo.
+  Último análisis corresponde a la marca de tiempo de la extracción vigente,
+  no a la fecha de modificación del archivo en Drive.
+  Los archivos no compatibles aparecen separados y no son seleccionables.
+- **Ver datos/Revisar** abre un panel inferior de consulta que conserva la
+  función anterior de extracción literal y la eliminación con confirmación
+  ELIMINAR; el visor especializado de evidencias es materia del Paso D.
+- La **corrección visual aprobada** permite marcar documentos de varias obras
+  en la misma selección, como muestra el PDF. La barra indica el total de
+  obras y documentos. Cada llamada de extracción conserva su obra original,
+  y el máximo es de **10 documentos por ejecución en total**, no por obra.
+  Se sigue reutilizando la función _analyze y sus verificaciones de Drive,
+  checksum, esquema, caché, bloqueo y exclusión de Catálogo de Gemini.
+  Al enfocar otra obra no se desmarcan los documentos de la anterior.
+  La pantalla indica si una selección excede 10, sin repetir análisis
+  por sí sola.
+- **Aún no hay diálogo previo de confirmación ni nuevo panel de progreso.**
+  Esos elementos se implementarán en el Paso C. En el Paso B la pulsación
+  de Analizar inicia el proceso como en la versión original.
+- Ninguna acción de búsqueda, navegación, selección o consulta invoca
+  Gemini. Una falla no provoca reintento automático.
+
+**Fidelidad a la maqueta PDF:** se retiró la fila de métricas generales,
+  el encabezado ocupa una sola banda, el árbol y las filas son compactos,
+  las tarjetas son horizontales y la barra inferior incluye círculo con
+  contador y el total de obras. La ruta de Drive muestra la carpeta real,
+  jamás la ruta local ficticia que aparece en la maqueta. Las pestañas
+  se presentan como «Expedientes», «Pruebas de auditoría» y «Base de datos»,
+  pero conservan internamente las secciones que la app ya tenía.
+
+**Principio de equivalencia:** se reutiliza el backend de ui/expedientes.py
+y se añade una función pura services/selection_rules.py para construir
+los estados de selección. tests/test_selection_rules.py incluye un oráculo
+independiente basado en las reglas originales, con casos de análisis
+vigente, solicitud bloqueada, documento desactualizado, formato incompatible
+y límite 10. Ninguna función existente de extracción, caché o almacenamiento
+ha sido reemplazada.
+
 ## Interfaz operativa
 
 La pantalla principal usa la estructura real de la carpeta de Google Drive
