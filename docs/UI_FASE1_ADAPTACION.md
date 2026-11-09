@@ -1,6 +1,19 @@
 # AuditorIA AD — Documento de adaptación de interfaz · Fase 1
 
-**Estado: PROPUESTA DOCUMENTAL — PENDIENTE DE APROBACIÓN. No se ha programado el rediseño.**
+**Estado: ADAPTACIÓN APROBADA PARA COMENZAR EL PASO A. El rediseño sigue aislado en su rama.**
+
+**Aprobación del usuario:** recibida expresamente después de revisar el documento
+de adaptación. Para la implementación se adoptan las cuatro opciones
+recomendadas: 9.1-B (evidencia textual, sin dependencia PDF nueva),
+9.2-A (cotejo en solo lectura), 9.3-A (una obra por ejecución),
+9.4-B (barra lateral colapsada). Ninguna modificación se fusionará a main
+sin aprobación posterior específica.
+
+**Paso A:** tema `ui/theme.py` / `ui/styles.css`, componentes base,
+encabezado y navegación superior en `app.py` y `.streamlit/config.toml`.
+Los servicios, los extractores y las pruebas existentes permanecen intactos.
+El paso B incluirá servicios de reglas puras únicamente si se confirma
+la excepción acotada prevista en la sección 8.
 
 **Fuente de alcance:** docs/UI_FASE1.md, copia íntegra del archivo adjunto PROMPT_UI_Fase1_Repo.md.
 
@@ -14,10 +27,11 @@
 
 El cambio es **exclusivamente de experiencia de usuario**. No altera reglas de auditoría ni el resultado de Gemini. La versión de referencia tiene CI exitosa en GitHub Actions (run 42553288901). El respaldo se creó en el commit exacto de main antes de incorporar este documento.
 
-Hasta que el usuario apruebe esta adaptación:
-- No modificar app.py, ui/expedientes.py, ui/resultados.py, servicios ni tests.
+Tras la aprobación se permiten **únicamente los pasos de interfaz acordados**,
+con commits pequeños en la rama `ui/fase1-explorador`:
+- No modificar servicios de extracción, almacenamiento, clasificación ni caché.
 - No cambiar requirements.txt, esquemas, prompts, base de Google Sheets ni datos de Drive.
-- No realizar análisis con Gemini ni nuevas descargas/operaciones sobre expedientes reales.
+- No realizar análisis con Gemini ni operaciones sobre expedientes reales.
 - No fusionar nada a main. La aplicación publicada debe continuar sin cambios.
 
 Si la Fase 1 no resulta satisfactoria, se descarta o revierte exclusivamente la rama/cambio de UI. La versión base sigue identificable por SHA y rama de respaldo. Antes de cualquier eventual fusión futura se revisará que no haya divergencias nuevas en main. NO usar un reset/force-push destructivo del historial ni revertir cambios ajenos posteriores.
@@ -147,4 +161,4 @@ Se requiere:
 3. Aprobación explícita de crear services/selection_rules.py (excepción acotada a la prohibición de cambiar services/), en caso de incluir el Paso B.
 4. Capturas de las tres pantallas del diseño aprobado, si se espera fidelidad visual y no solo aproximación a las descripciones del prompt.
 
-**Hasta recibir esa aprobación, no se escribirá código de UI ni se tocará main.**
+**La aprobación para iniciar el Paso A ya fue recibida.** Quedan pendientes la verificación visual de las capturas y una aprobación posterior expresa antes de fusionar a `main`. Durante el Paso A no se añaden dependencias ni se cambia ningún servicio.
