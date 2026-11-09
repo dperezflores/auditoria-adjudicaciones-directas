@@ -304,19 +304,26 @@ def render_results() -> None:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Obras con contrato", len({r.obra_id for r in filtered}))
     col2.metric("Contratos extraídos", len(filtered))
-    col3.metric("Monto identificado", money_text(total, currency) if total is not None else "—")
+    col3.metric("Monto declarado (IVA no homologado)", money_text(total, currency) if total is not None else "—")
     col4.metric("Campos sin dato", sum(len(r.missing_fields) for r in filtered))
     st.caption(
         f"Indicadores correspondientes a los filtros actuales. {amount_note} "
-        "Los importes no constituyen montos auditados ni están homologados por IVA."
+        "La suma no homologa importes con IVA, sin IVA o con tratamiento no identificado."
     )
 
     st.markdown("#### Listado de obras y contratos")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
-        "La tabla incluye los 16 campos contractuales y los participantes. "
-        "Desplázate horizontalmente para ver las demás columnas; selecciona "
-        "una fila para abrir su ficha."
+        "Las modalidades y las fechas se muestran normalizadas (DD/MM/AAAA). "
+        "Los montos se separan según tengan o no IVA documentado; si la tasa "
+        "no aparece, el cálculo complementario usa 16% como supuesto señalado. "
+        "Si no consta si incluye IVA, se presenta el importe sin clasificar. "
+        "Desplázate horizontalmente y selecciona una fila para ver los textos originales."
+    )
+    st.caption(
+        "La normalización y el cálculo de IVA son solo de presentación; "
+        "no alteran el contrato ni los datos extraídos. Confirma tasas y montos "
+        "con el documento fuente antes de utilizarlos en una observación."
     )
     if not filtered:
         st.info("Ningún contrato coincide con los filtros.")
@@ -334,10 +341,12 @@ def render_results() -> None:
             "Obra o servicio": st.column_config.TextColumn(width="large"),
             "Número de contrato": st.column_config.TextColumn(width="medium"),
             "Contratista (nombre o razón social)": st.column_config.TextColumn(width="large"),
-            "Monto del contrato": st.column_config.TextColumn(width="medium"),
+            "Monto del contrato con IVA": st.column_config.TextColumn(width="medium"),
+            "Monto del contrato sin IVA": st.column_config.TextColumn(width="medium"),
+            "Monto del contrato (IVA no indicado)": st.column_config.TextColumn(width="medium"),
+            "IVA utilizado en el cálculo": st.column_config.TextColumn(width="medium"),
             "Personas que participan en el contrato": st.column_config.TextColumn(width="large"),
             "Legislación citada en el contrato": st.column_config.TextColumn(width="large"),
-            "Estado de extracción": st.column_config.TextColumn(width="medium"),
         },
     )
 
