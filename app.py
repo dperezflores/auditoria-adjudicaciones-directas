@@ -5,19 +5,22 @@ La IA nunca se ejecuta al navegar; requiere autorización y acción explícita.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from security.app_access import require_access
 from services.drive_service import is_configured
 from services.sheets_service import storage_configured
-from ui.expedientes import render_expedientes
+from ui.components import encabezado_app
+from ui.expedientes import _refresh_inventory, render_expedientes
 from ui.resultados import render_results
 
 st.set_page_config(
     page_title="AuditorIA · Expedientes de obra",
     page_icon="📂",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 allowed = require_access()
@@ -28,55 +31,45 @@ if not allowed:
     )
     st.stop()
 
-st.markdown("""
-<style>
-.block-container{max-width:1480px;padding-top:2.0rem;padding-bottom:3rem}
-h1,h2,h3{letter-spacing:-.028em}
-h1{font-weight:750}
-[data-testid="stMetric"]{
-  border:1px solid rgba(120,130,150,.22);
-  border-radius:13px;
-  padding:17px 18px;
-  background:rgba(130,140,160,.045);
-}
-[data-testid="stMetricValue"]{font-weight:700}
-[data-testid="stExpander"]{
-  border:1px solid rgba(130,140,155,.23);
-  border-radius:11px;
-}
-section[data-testid="stSidebar"]{
-  border-right:1px solid rgba(128,128,128,.12);
-}
-[data-testid="stDataFrame"]{border-radius:9px;overflow:hidden}
-</style>
-""", unsafe_allow_html=True)
+# Estilos locales estáticos, una sola inyección por render; sin fuentes de datos externas.
+_style_path = Path(__file__).resolve().parent / "ui" / "styles.css"
+st.markdown(
+    "<style>" + _style_path.read_text(encoding="utf-8") + "</style>",
+    unsafe_allow_html=True,
+)
 
-with st.sidebar:
-    st.markdown("## 📂 AuditorIA")
-    st.caption("Gestión documental · Adjudicación directa")
-    st.success("Sesión autorizada", icon=":material/verified_user:")
-    st.divider()
 
-    page = st.radio(
-        "Navegación",
-        ["Expedientes", "Resultados", "Pruebas de adjudicación"],
-        index=0,
-        key="app_section",
-    )
-    st.divider()
-    ready_drive = is_configured(st.secrets)
-    ready_sheets = storage_configured(st.secrets)
-    ready_ai = bool(st.secrets.get("gemini", {}).get("api_key"))
-    st.caption("SERVICIOS CONECTADOS")
-    st.write(("● Drive" if ready_drive else "○ Drive sin configurar"))
-    st.write(("● Google Sheets" if ready_sheets else "○ Google Sheets sin configurar"))
-    st.write(("● Gemini" if ready_ai else "○ Gemini sin configurar"))
-    st.divider()
-    st.caption(
-        "Los archivos solo se consultan de la carpeta autorizada en Google Drive. "
-        "No compartas claves ni expedientes desde un repositorio público."
-    )
-    st.button("Cerrar sesión", on_click=st.logout, use_container_width=True)
+def _refresh_from_header() -> None:
+    """Acción explícita, con el mismo flujo de sincronización y escritura protegido."""
+    try:
+        _refresh_inventory()
+        st.session_state.pop("ex_sync_error", None)
+        st.session_state["ex_header_refresh_success"] = True
+    except Exception:
+        st.session_state["ex_sync_error"] = (
+            "No se pudo completar la sincronización. Comprueba los permisos "
+            "de Drive y Google Sheets."
+        )
+        st.session_state.pop("ex_header_refresh_success", None)
+
+
+ready_drive = is_configured(st.secrets)
+ready_sheets = storage_configured(st.secrets)
+ready_ai = bool(st.secrets.get("gemini", {}).get("api_key"))
+_inventory = st.session_state.get("ex_inventory")
+page = encabezado_app(
+    root_name=_inventory.root_name if _inventory else None,
+    synced_at=st.session_state.get("ex_synced_at"),
+    ready_drive=ready_drive,
+    ready_sheets=ready_sheets,
+    ready_gemini=ready_ai,
+    user_email=str(st.user.email or ""),
+    on_refresh=_refresh_from_header,
+)
+if st.session_state.pop("ex_header_refresh_success", False):
+    st.success("Google Drive actualizado y registros sincronizados.")
+if st.session_state.get("ex_sync_error") and page != "Expedientes":
+    st.error(st.session_state["ex_sync_error"])
 
 if page == "Expedientes":
     render_expedientes(allowed)
