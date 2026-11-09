@@ -68,9 +68,11 @@ def _drive_link(work: WorkRecord, doc: DocumentRecord | None = None) -> str | No
 
 
 def _state_for(doc: DocumentRecord, states: Mapping[str, FileStatus]) -> str:
+    if not code_from_filename(doc.name, doc.mime_type):
+        return "POR_IDENTIFICAR"
     if doc.id in states:
         return states[doc.id].label
-    return "POR_IDENTIFICAR" if not code_from_filename(doc.name, doc.mime_type) else "Sin registrar"
+    return "Sin registrar"
 
 
 def friendly_work_name(raw_name: str) -> str:
