@@ -1,4 +1,4 @@
-"""Tabla contractual: 16 campos + personas en una celda, sin modificar textos."""
+"""Listado normalizado con fuente contractual íntegra en ContractRecord."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -68,19 +68,28 @@ def make_record(*, modern: bool = True) -> ContractRecord:
 
 
 class ContractTableTests(unittest.TestCase):
-    def test_every_v2_field_is_a_column_in_specified_order(self):
+    def test_main_table_has_normalized_modalities_dates_and_vat_amounts(self):
         row = contract_table_rows((make_record(),))[0]
-        self.assertEqual(
-            list(row)[:len(FIELD_LABELS_V2)],
-            [label for _, label in FIELD_LABELS_V2],
-        )
         self.assertEqual(len(FIELD_LABELS_V2), 16)
         self.assertIn("Personas que participan en el contrato", row)
         self.assertEqual(row["Número de contrato"], "  A-001/2026  ")
-        self.assertEqual(row["Monto del contrato"], "$1,234,567.89 (I.V.A. incluido)")
+        self.assertEqual(row["Tipo de contrato"], "Precios Unitarios")
+        self.assertEqual(row["Modalidad de adjudicación"], "ADJUDICACIÓN DIRECTA")
+        self.assertEqual(row["Fecha de inicio contractual"], "02/06/2026")
+        self.assertEqual(row["Fecha de término contractual"], "30/09/2026")
+        self.assertEqual(row["Fecha de firma del contrato"], "04/05/2026")
+        self.assertEqual(row["Monto del contrato con IVA"], "$1,234,567.89 MXN")
+        self.assertEqual(row["Monto del contrato sin IVA"], "$1,064,282.66 MXN")
+        self.assertEqual(row["IVA utilizado en el cálculo"], "16% (supuesto; verificar)")
+        self.assertEqual(row["Monto del contrato (IVA no indicado)"], "—")
         self.assertEqual(row["Anticipo"], "30.00%")
+        self.assertNotIn("Monto del contrato", row)
+        self.assertNotIn("Campos extraídos", row)
+        self.assertNotIn("Estado de extracción", row)
         self.assertEqual(row["Legislación citada en el contrato"],
                          "LEY DE OBRA PÚBLICA Y SERVICIOS RELACIONADOS CON LA MISMA")
+        self.assertEqual(make_record().full_values["monto_contrato"],
+                         "$1,234,567.89 (I.V.A. incluido)")
 
     def test_participants_stay_together_in_one_cell(self):
         row = contract_table_rows((make_record(),))[0]
@@ -99,6 +108,7 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(row["Representante técnico"], "—")
         self.assertEqual(row["Personas que participan en el contrato"], "—")
         self.assertEqual(row["Ámbito normativo preliminar"], "No determinado (versión anterior)")
+        self.assertEqual(row["Monto del contrato sin IVA"], "$1,064,282.66 MXN")
 
     def test_multiple_records_stay_one_row_per_contract(self):
         rows = contract_table_rows((make_record(), make_record(modern=False)))
