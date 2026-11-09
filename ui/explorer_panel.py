@@ -83,11 +83,20 @@ def _set_selected(work_id: str, identifiers: set[str]) -> None:
     st.session_state["ex_v2_selected_ids"] = sorted(identifiers)
     # Sincronizar controles persistentes en el callback, antes de que Streamlit
     # los instancie de nuevo. La selección siempre pertenece a UNA obra.
+    known_eligible = set(
+        st.session_state.get("ex_v2_known_eligible", {}).get(work_id, ())
+    )
     for key in tuple(st.session_state.keys()):
-        if key.startswith("ex_v2_cb_"):
+        if key.startswith("ex_v2_cb_row_"):
+            st.session_state[key] = key[len("ex_v2_cb_row_"):] in identifiers
+        elif key.startswith("ex_v2_cb_"):
             st.session_state[key] = key[len("ex_v2_cb_"):] in identifiers
         elif key.startswith("ex_v2_work_cb_"):
-            st.session_state[key] = key[len("ex_v2_work_cb_"):] == work_id and bool(identifiers)
+            st.session_state[key] = (
+                key[len("ex_v2_work_cb_"):] == work_id
+                and bool(known_eligible)
+                and known_eligible.issubset(identifiers)
+            )
 
 
 def _focus_work(work_id: str) -> None:
@@ -618,6 +627,9 @@ def render_expedientes(authenticated: bool) -> None:
             work.id, supported_docs(work), registered, extractions, states,
             ENABLED_EXTRACTORS, extraction_rows=all_extractions,
         ) for work in inventory.works
+    }
+    st.session_state["ex_v2_known_eligible"] = {
+        work_id: tuple(plan.eligible_ids) for work_id, plan in plans.items()
     }
     total_files = sum(f.total for f in folders.values())
     analysed_files = sum(f.complete for f in folders.values())
