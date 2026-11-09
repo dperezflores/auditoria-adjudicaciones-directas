@@ -244,7 +244,8 @@ def _render_tree(
         and (
             mode == "Todas"
             or (mode == "Completas" and folders[w.id].label == "Analizada")
-            or (mode == "Con pendientes" and folders[w.id].label != "Analizada")
+            or (mode == "Con pendientes" and folders[w.id].total > 0
+                and folders[w.id].label != "Analizada")
         )
     ]
     if not visible:
