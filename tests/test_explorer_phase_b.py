@@ -65,7 +65,6 @@ class ExplorerPhaseBTests(unittest.TestCase):
         self.assertIn("groups = [(work, docs) for work, docs in groups if docs]", screen)
         self.assertNotIn("ex_v2_selected_work", screen)
         self.assertIn("batch_total = active_docs[:MAX_BATCH]", screen)
-        self.assertIn("five", "five")  # El diseño tiene cinco tarjetas horizontales
         self.assertIn("max_batch", (ROOT / "services" / "selection_rules.py").read_text())
         self.assertIn("def render_expedientes(authenticated: bool)", old)
         self.assertIn("def _analyze(", old)
@@ -101,6 +100,15 @@ class ExplorerPhaseBTests(unittest.TestCase):
             'st.session_state["ex_last_run_obra_id"] = active_work.id\n        _clear_selection()',
             screen,
         )
+
+    def test_status_for_unrecognised_pdf_is_not_misrepresented(self):
+        code = (ROOT / "ui" / "explorer_panel.py").read_text(encoding="utf-8")
+        section = code.split("def _state_for(", 1)[1].split("\ndef _selection(", 1)[0]
+        self.assertLess(
+            section.index('if not code_from_filename('),
+            section.index('if doc.id in states:'),
+        )
+        self.assertIn('return "POR_IDENTIFICAR"', section)
 
     def test_no_demo_analysis_or_drive_calls(self):
         source = (ROOT / "ui" / "preview_data.py").read_text(encoding="utf-8")
