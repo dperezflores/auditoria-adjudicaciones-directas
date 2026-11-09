@@ -768,10 +768,20 @@ def render_expedientes(authenticated: bool) -> None:
         requires_gemini and not gemini.get("api_key")
     )
     st.markdown('<div class="aud-space-for-bar"></div>', unsafe_allow_html=True)
+    demo_pages = (
+        [_pages_label(doc, True) for doc in batch_total]
+        if is_demo else []
+    )
+    total_pages = (
+        sum(int(n) for n in demo_pages)
+        if demo_pages and all(n.isdigit() for n in demo_pages)
+        else None
+    )
     barra_seleccion(
         cantidad=len(active_docs), obras=len(groups),
         tamano_mb=sum(doc.size_bytes for doc in batch_total) / 1_000_000,
         catalogos=catalogue_count,
+        paginas=total_pages,
         al_limpiar=_clear_selection, al_analizar=_request_analysis,
         deshabilitado=disabled,
     )
