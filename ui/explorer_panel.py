@@ -640,6 +640,12 @@ def _render_right(
         url = None if is_demo else _drive_link(work)
         if url:
             st.link_button("Abrir carpeta", url, use_container_width=True)
+        else:
+            st.button(
+                "Abrir carpeta", key="ex_v2_demo_drive_link",
+                disabled=True, use_container_width=True,
+                help="Disponible cuando la carpeta se encuentre conectada a Drive.",
+            )
     with choose_col:
         if st.button(
             f"✦ Analizar esta obra ({len(plan.eligible)})",
