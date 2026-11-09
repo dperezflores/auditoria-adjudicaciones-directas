@@ -430,7 +430,7 @@ code, pre {font-family:var(--aud-mono);}
 .aud-space-for-bar {height:56px !important;}
 
 /* Fallback adaptable; las cinco tarjetas sólo se envuelven cuando no caben. */
-@media (max-width:1100px) {
+@media (max-width:900px) {
   .aud-tiles {grid-template-columns:repeat(3,minmax(0,1fr));}
   .aud-file-tile {min-height:58px;}
   .st-key-ex_v2_detail h2 {font-size:18px !important;}
