@@ -7,7 +7,6 @@ visibles proceden de DatosContrato y de la extracción JSON original.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 from decimal import Decimal
 import pandas as pd
 import plotly.express as px
@@ -19,7 +18,9 @@ from services.contract_portfolio import (
 )
 from services.sheets_service import create_sheets_client, storage_configured
 from services.analysis_catalog import load_status_tables
-from services.catalogo_xlsx import CATALOGO_SCHEMA_VERSION
+from services.document_export import (
+    export_document_tables, read_registered_works, workbook_bytes,
+)
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
 from ui.document_crosscheck import render_document_crosscheck
@@ -30,25 +31,6 @@ def _fetch_portfolio() -> None:
     st.session_state["results_portfolio"] = read_contract_portfolio(
         client, st.secrets["storage"]["spreadsheet_id"]
     )
-    tables = load_status_tables(client, st.secrets["storage"]["spreadsheet_id"])
-    saved = {r["cache_key"]: r for r in tables["Extracciones"]}
-    catalogs = {}
-    for doc in tables["Documentos"]:
-        if doc["tipo_documental"] != "CATALOGO" or doc["activo"] != "SI":
-            continue
-        entry = saved.get(doc["resultado_id"])
-        if not entry or entry["version_esquema"] != CATALOGO_SCHEMA_VERSION:
-            continue
-        if entry["documento_id"] != doc["documento_id"] or entry["obra_id"] != doc["obra_id"]:
-            continue
-        if entry["estado"] != "COMPLETADO" or not entry["resultado_json"]:
-            continue
-        try:
-            summary = json.loads(entry["resultado_json"])
-            catalogs.setdefault(doc["obra_id"], []).append(summary)
-        except (ValueError, TypeError):
-            continue
-    st.session_state["results_catalogs"] = catalogs
     st.session_state["results_last_read"] = (
         datetime.now(timezone.utc).isoformat(timespec="seconds")
     )
@@ -252,6 +234,35 @@ def render_results() -> None:
         return
 
     portfolio = st.session_state["results_portfolio"]
+    # La descarga se genera al hacer clic y consulta la base actual completa.
+    # El botón NO usa los filtros ni solicita documentos a Gemini.
+    gcp_credentials = dict(st.secrets["gcp_service_account"])
+    spreadsheet_id = str(st.secrets["storage"]["spreadsheet_id"])
+
+    def _download_pdf_base() -> bytes:
+        sheets = create_sheets_client(gcp_credentials)
+        current = read_contract_portfolio(sheets, spreadsheet_id)
+        records = load_status_tables(sheets, spreadsheet_id)
+        works = read_registered_works(sheets, spreadsheet_id)
+        data = export_document_tables(
+            works, records["Documentos"], records["Extracciones"], current.records,
+        )
+        return workbook_bytes(data)
+
+    st.download_button(
+        "Descargar base documental PDF (Excel)",
+        data=_download_pdf_base,
+        file_name="AuditorIA_Base_Documental_PDF.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="results_export_excel_pdf",
+        on_click="ignore",
+        help="Consulta Google Sheets al descargar; incluye todos los PDF vigentes, sin catálogo ni Gemini.",
+    )
+    st.caption(
+        "Excel relacional actualizado al momento de la descarga. Incluye contratos, PUC, "
+        "dictámenes, notificaciones, órdenes, especialidades y evidencias. "
+        "ID_OBRA relaciona las hojas; ID_OBRA_DRIVE conserva la identidad estable."
+    )
     st.caption(
         "Fuente: Google Sheets · Última consulta: " +
         st.session_state.get("results_last_read", "No disponible") + " UTC"
@@ -365,21 +376,6 @@ def render_results() -> None:
     )
     chosen_contract = filtered[chosen_index]
     _render_details(chosen_contract)
-    for summary in st.session_state.get("results_catalogs", {}).get(chosen_contract.obra_id, []):
-        st.markdown("#### Catálogo original de la obra (Excel, sin IA)")
-        a, b, c = st.columns(3)
-        a.metric("Conceptos contratados", summary["conceptos_originales"])
-        b.metric("Conceptos fuera de catálogo excluidos", summary["excluidos_fuera_catalogo"])
-        c.metric("Importe inicial calculado sin IVA", summary["importe_original_calculado_sin_iva"])
-        if summary.get("claves_repetidas", 0):
-            st.info(
-                f"{summary['claves_repetidas']} clave(s) utilizadas en "
-                f"{summary['renglones_con_clave_repetida']} renglones. "
-                "Se mantuvieron por capítulo y fila de origen."
-            )
-        st.caption("Fuente: CATALOGO.xlsx · Cantidad Inicial × Precio U. "
-                   "No se incluyen excedentes ni conceptos extraordinarios. "
-                   "Consultar detalle y filas en Expedientes.")
     st.divider()
     render_document_crosscheck(chosen_contract, portfolio.supporting_documents)
     st.divider()

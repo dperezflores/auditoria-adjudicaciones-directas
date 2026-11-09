@@ -17,6 +17,18 @@ from typing import Any, Mapping, Sequence
 
 from services.contract_v2 import CONTRACT_V2_FIELDS, ContractExtractionV2
 from services.document_analysis import GeneralAnalysis
+from services.puc_schema import PUC_FIELDS, PucExtractionV1
+from services.dictamen_schema import DICTAMEN_FIELDS, DictamenAdV1
+from services.notificacion_schema import NOTIFICACION_FIELDS, NotificacionAdV1
+from services.orden_schema import ORDEN_FIELDS, OrdenAdV1
+
+
+_SPECIALIZED = {
+    "puc-v1": ("PUC", PucExtractionV1, PUC_FIELDS),
+    "dictamen-ad-v1": ("DICTAMEN_AD", DictamenAdV1, DICTAMEN_FIELDS),
+    "notificacion-ad-v1": ("NOTIFICACION_AD", NotificacionAdV1, NOTIFICACION_FIELDS),
+    "orden-ad-v1": ("ORDEN_AD", OrdenAdV1, ORDEN_FIELDS),
+}
 
 
 @dataclass(frozen=True)
@@ -131,6 +143,24 @@ def build_supporting_documents(
                         )
                         notes = tuple(saved.observaciones)
                         state = "Analizado"
+                    elif schema in _SPECIALIZED:
+                        kind, model, field_names = _SPECIALIZED[schema]
+                        saved = model.model_validate_json(candidate["resultado_json"])
+                        fields = tuple({
+                            "campo": key,
+                            "valor": getattr(saved, key).valor,
+                            "pagina": getattr(saved, key).pagina,
+                            "evidencia": getattr(saved, key).evidencia,
+                        } for key in field_names if getattr(saved, key).valor is not None)
+                        notes = tuple(saved.observaciones)
+                        if schema == "puc-v1" and saved.especialidades:
+                            fields += tuple({
+                                "campo": "especialidad",
+                                "valor": " / ".join(filter(None, [item.categoria, item.actividad, item.tipo_marcado])),
+                                "pagina": item.pagina,
+                                "evidencia": item.evidencia,
+                            } for item in saved.especialidades)
+                        state = "Analizado"
                     elif schema == "contrato-v1":
                         kind = "Contrato (esquema anterior)"
                         state = "Analizado"
@@ -153,7 +183,7 @@ _PUC_ALIASES = {
     "contratista": ("nombre_contratista", "contratista", "razon_social", "nombre_razon_social"),
     "registro_puc": ("numero_de_registro", "numero_registro_puc", "registro_puc", "numero_de_registro_puc"),
     "rfc": ("rfc", "registro_federal_de_contribuyentes"),
-    "representante_legal": ("representante_legal",),
+    "representante_legal": ("representante_legal", "representacion_legal"),
     "representante_tecnico": ("representacion_tecnica", "representante_tecnico", "responsable_tecnico"),
     "vigencia_hasta": ("vigencia_hasta", "fecha_de_vencimiento", "vigencia_al", "vigencia"),
     "capital_contable": ("capital_contable",),
@@ -162,7 +192,11 @@ _PUC_ALIASES = {
 
 
 def puc_values(puc: SupportingDocument) -> dict[str, Mapping[str, Any]]:
-    candidates = {_field_key(str(item.get("campo") or "")): item for item in puc.campos}
+    candidates = {}
+    for item in puc.campos:
+        key = _field_key(str(item.get("campo") or ""))
+        if key and key not in candidates:
+            candidates[key] = item
     return {
         key: next(
             (candidates[alias] for alias in aliases
