@@ -442,3 +442,11 @@ code, pre {font-family:var(--aud-mono);}
   .st-key-ex_barra_seleccion {height:auto;min-height:59px;}
   .st-key-ex_barra_seleccion .aud-bottom-info {display:none;}
 }
+
+/* La demostración es evidente sin desplazar el explorador hacia abajo. */
+.aud-demo-note {
+  color:#23488A;background:#EDF2FD;
+  border:1px solid #DDE7FC;
+  padding:5px 10px;margin:2px 0 6px;
+  border-radius:5px;font-size:10px;
+}
