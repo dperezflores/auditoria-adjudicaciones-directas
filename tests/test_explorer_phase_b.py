@@ -78,6 +78,19 @@ class ExplorerPhaseBTests(unittest.TestCase):
         self.assertIn("Sin extractor compatible", screen)
         self.assertIn("disabled=is_demo", screen)
 
+    def test_widget_reset_runs_before_render_to_avoid_streamlit_exception(self):
+        screen = (ROOT / "ui" / "explorer_panel.py").read_text(encoding="utf-8")
+        self.assertIn('st.session_state["ex_v2_reset_after_analysis"] = True', screen)
+        self.assertIn('st.session_state.pop("ex_v2_reset_after_analysis", False)', screen)
+        self.assertLess(
+            screen.index('st.session_state.pop("ex_v2_reset_after_analysis", False)'),
+            screen.index('focused = _render_tree('),
+        )
+        self.assertNotIn(
+            'st.session_state["ex_last_run_obra_id"] = active_work.id\n        _clear_selection()',
+            screen,
+        )
+
     def test_no_demo_analysis_or_drive_calls(self):
         source = (ROOT / "ui" / "preview_data.py").read_text(encoding="utf-8")
         self.assertNotIn("create_drive_client", source)
