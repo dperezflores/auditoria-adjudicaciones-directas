@@ -23,7 +23,6 @@ _MONTH_PATTERN = "|".join(_MONTHS)
 def _fold(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or "").casefold())
     value = "".join(c for c in value if not unicodedata.combining(c))
-    value = re.sub(r"\bi\s*\.?\s*v\s*\.?\s*a\b", "iva", value)
     return " ".join(re.sub(r"[^a-z0-9%]+", " ", value).split())
 
 
