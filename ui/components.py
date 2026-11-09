@@ -181,31 +181,55 @@ def barra_seleccion(
     al_limpiar: Callable[[], None],
     al_analizar: Callable[[], None],
     deshabilitado: bool = False,
+    paginas: int | None = None,
 ) -> None:
-    """Barra de selección con acción explícita; jamás ejecuta IA al renderizar."""
+    """Barra fija como el PDF; el botón sólo actúa con pulsación del usuario."""
     with st.container(key="ex_barra_seleccion"):
         if cantidad <= 0:
             st.caption(
-                "Marca obras completas o documentos sueltos para analizarlos con IA. "
-                "Los documentos ya analizados se omiten solos."
+                "Marca obras o documentos pendientes para analizar. "
+                "Los análisis vigentes se omiten automáticamente."
             )
             return
-        st.markdown('<span class="aud-bar-active" aria-hidden="true"></span>',
-                    unsafe_allow_html=True)
-        summary, clear, run = st.columns([5, 1.7, 2.5],
-                                          gap="small", vertical_alignment="center")
-        with summary:
+        st.markdown(
+            '<span class="aud-bar-active" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
+        badge, summary, count, clear, run = st.columns(
+            [0.55, 3.6, 3.0, 1.5, 1.8], gap="small",
+            vertical_alignment="center",
+        )
+        with badge:
             st.markdown(
-                f"**{cantidad} documentos seleccionados en {obras} obras**"
+                f'<span class="aud-count-circle">{cantidad}</span>',
+                unsafe_allow_html=True,
             )
-            st.caption(
-                f"{tamano_mb:.2f} MB en total · "
-                f"{catalogos} catálogos se importan sin IA"
+        with summary:
+            unit = "obra" if obras == 1 else "obras"
+            st.markdown(
+                f'<span class="aud-bottom-title">'
+                f'{cantidad} documentos seleccionados en {obras} {unit}</span>',
+                unsafe_allow_html=True,
+            )
+        with count:
+            if paginas is not None:
+                message = f"{paginas} páginas en total"
+            else:
+                message = f"{tamano_mb:.2f} MB del lote (páginas no disponibles)"
+            if catalogos:
+                message += f" · {catalogos} presupuesto(s) sin IA"
+            st.markdown(
+                f'<span class="aud-bottom-info">{escape(message)}</span>',
+                unsafe_allow_html=True,
             )
         with clear:
-            st.button("Limpiar selección", key="ex_limpiar_barra",
-                      on_click=al_limpiar, use_container_width=True)
+            st.button(
+                "Limpiar selección", key="ex_limpiar_barra",
+                on_click=al_limpiar, use_container_width=True,
+            )
         with run:
-            st.button("✦ Analizar con IA", key="ex_analizar_barra",
-                      on_click=al_analizar, disabled=deshabilitado,
-                      type="primary", use_container_width=True)
+            st.button(
+                "✦ Analizar con IA", key="ex_analizar_barra",
+                on_click=al_analizar, disabled=deshabilitado,
+                type="primary", use_container_width=True,
+            )
