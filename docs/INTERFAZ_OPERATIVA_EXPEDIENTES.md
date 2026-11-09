@@ -59,28 +59,43 @@ evaluar y probar la navegación visual sin dar acceso a expedientes.
   filtros Todas / Con pendientes / Completas, progreso por carpeta y
   documentos desplegables. Las casillas de obra y documento seleccionan
   sólo archivos pendientes que pasan las reglas actuales de elegibilidad.
-- La columna derecha muestra la obra enfocada, enlace a Drive, tarjetas
-  del Contrato, PUC, Catálogo, Dictamen AD y Notificación AD; la Orden AD
-  aparece cuando existe. "Falta" es informativo y no seleccionable.
-- Se muestra la lista real de archivos, con código documental,
-  ruta relativa, tamaño, fecha, estado y acción. Los archivos no compatibles
-  están separados, sin posibilidad de envío a Gemini.
+- La columna derecha muestra la obra enfocada, enlace a Drive y cinco
+  tarjetas **en una fila**: Contrato, PUC, **Presupuesto** (etiqueta visual
+  del CATALOGO.xlsx), Dictamen AD y Notificación AD. La Orden AD se muestra
+  como complementaria cuando existe. "Falta" es informativo.
+  Los títulos de carpeta se presentan de forma legible sin cambiar sus IDs.
+- La tabla muestra Documento, Archivo, Págs., Estado, Último análisis y Acción.
+  No se almacenan cantidades de páginas en el inventario actual: la columna
+  indica **—** si no hay un dato documental verificable; únicamente en la
+  demostración sintética se muestran cantidades inventadas de ejemplo.
+  Último análisis corresponde a la marca de tiempo de la extracción vigente,
+  no a la fecha de modificación del archivo en Drive.
+  Los archivos no compatibles aparecen separados y no son seleccionables.
 - **Ver datos/Revisar** abre un panel inferior de consulta que conserva la
   función anterior de extracción literal y la eliminación con confirmación
   ELIMINAR; el visor especializado de evidencias es materia del Paso D.
-- La barra inferior muestra la selección de **una sola obra** y el total
-  de archivos. Pulsar **Analizar con IA** inicia la misma función _analyze
-  utilizada anteriormente, con la validación previa de tipo, tamaños,
-  registro de Drive, huella, extracción vigente, bloqueos y límite de
-  10 documentos por ejecución. CATALOGO.xlsx se importa sin Gemini.
-- La selección queda limitada a una obra: enfocar otra limpia la anterior.
-  Si el usuario marca más de 10 documentos, se procesan sólo los primeros
-  10 y debe iniciar una nueva solicitud para el siguiente lote.
+- La **corrección visual aprobada** permite marcar documentos de varias obras
+  en la misma selección, como muestra el PDF. La barra indica el total de
+  obras y documentos. Cada llamada de extracción conserva su obra original,
+  y el máximo es de **10 documentos por ejecución en total**, no por obra.
+  Se sigue reutilizando la función _analyze y sus verificaciones de Drive,
+  checksum, esquema, caché, bloqueo y exclusión de Catálogo de Gemini.
+  Al enfocar otra obra no se desmarcan los documentos de la anterior.
+  La pantalla indica si una selección excede 10, sin repetir análisis
+  por sí sola.
 - **Aún no hay diálogo previo de confirmación ni nuevo panel de progreso.**
   Esos elementos se implementarán en el Paso C. En el Paso B la pulsación
   de Analizar inicia el proceso como en la versión original.
 - Ninguna acción de búsqueda, navegación, selección o consulta invoca
   Gemini. Una falla no provoca reintento automático.
+
+**Fidelidad a la maqueta PDF:** se retiró la fila de métricas generales,
+  el encabezado ocupa una sola banda, el árbol y las filas son compactos,
+  las tarjetas son horizontales y la barra inferior incluye círculo con
+  contador y el total de obras. La ruta de Drive muestra la carpeta real,
+  jamás la ruta local ficticia que aparece en la maqueta. Las pestañas
+  se presentan como «Expedientes», «Pruebas de auditoría» y «Base de datos»,
+  pero conservan internamente las secciones que la app ya tenía.
 
 **Principio de equivalencia:** se reutiliza el backend de ui/expedientes.py
 y se añade una función pura services/selection_rules.py para construir
