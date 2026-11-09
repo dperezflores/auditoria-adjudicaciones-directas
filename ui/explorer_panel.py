@@ -414,126 +414,159 @@ def _render_tree(
 
 
 def _expected_cards(work: WorkRecord, states: dict) -> None:
+    """Cinco tarjetas horizontales idénticas a la distribución del PDF."""
     present: dict[str, list[DocumentRecord]] = {}
     for doc in supported_docs(work):
         code = code_from_filename(doc.name, doc.mime_type)
         if code:
             present.setdefault(code, []).append(doc)
-    kinds = list(EXPECTED_DOCUMENTS)
+    tiles = []
+    for code, label in EXPECTED_DOCUMENTS:
+        visible_label = "Presupuesto" if code == "CATALOGO" else label
+        docs = present.get(code, ())
+        state = _state_for(docs[0], states) if docs else "Falta"
+        if len({_state_for(d, states) for d in docs}) > 1:
+            state = "Parcial"
+        tiles.append(
+            '<div class="aud-file-tile">'
+            f'<div class="aud-file-tile-label">{escape(visible_label)}</div>'
+            f'{pildora_estado(state)}'
+            '</div>'
+        )
+    st.markdown(
+        '<div class="aud-eyebrow">EXPEDIENTE</div>'
+        + '<div class="aud-tiles">' + "".join(tiles) + '</div>',
+        unsafe_allow_html=True,
+    )
     if OPTIONAL_DOCUMENT[0] in present:
-        kinds.append(OPTIONAL_DOCUMENT)
-
-    st.markdown('<div class="aud-eyebrow">EXPEDIENTE</div>', unsafe_allow_html=True)
-    # Tres tarjetas por fila; diseño adaptable mediante columnas nativas.
-    for start in range(0, len(kinds), 3):
-        row = st.columns(3, gap="small")
-        for col, (code, label) in zip(row, kinds[start:start + 3]):
-            with col:
-                with st.container(border=True, key=f"ex_v2_doc_card_{work.id}_{code}"):
-                    st.markdown(f"**{label}**")
-                    if code in present:
-                        docs = present[code]
-                        state = _state_for(docs[0], states)
-                        if len({ _state_for(d, states) for d in docs}) > 1:
-                            state = "Parcial"
-                        st.markdown(pildora_estado(state), unsafe_allow_html=True)
-                        st.caption(f"{len(docs)} archivo(s)")
-                    else:
-                        st.markdown(pildora_estado("Falta"), unsafe_allow_html=True)
-                        st.caption("No se encontró en la carpeta")
-                    if code == OPTIONAL_DOCUMENT[0]:
-                        st.caption("Opcional")
+        item = present[OPTIONAL_DOCUMENT[0]][0]
+        st.markdown(
+            '<div class="aud-optional-document">'
+            '<span>Orden de adjudicación (opcional)</span>'
+            f'{pildora_estado(_state_for(item, states))}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _render_doc_rows(
-    work: WorkRecord, states: dict, plan: SelectionPlan, is_demo: bool,
+    work: WorkRecord, states: dict, plan: SelectionPlan,
+    tables: dict, is_demo: bool,
 ) -> None:
-    st.markdown("### Archivos en la carpeta")
+    """Tabla densa: datos reales de Sheets y páginas solo cuando consten."""
     docs = supported_docs(work)
-    if not docs and not work.other_files:
-        st.info("Esta carpeta no contiene documentos compatibles.")
-        return
+    with st.container(key="ex_v2_files_panel"):
+        st.markdown(
+            '<div class="aud-files-heading"><strong>Archivos en la carpeta</strong>'
+            '<span>Marca la casilla de cada documento que quieras analizar</span>'
+            '</div>', unsafe_allow_html=True,
+        )
+        if not docs and not work.other_files:
+            st.info("Esta carpeta no contiene documentos compatibles.")
+            return
 
-    header = st.columns([0.42, 1.4, 2.5, 0.65, 1.08, 0.88, 0.97],
-                        gap="small", vertical_alignment="center")
-    for col, label in zip(
-        header, ("", "Documento", "Archivo", "Tamaño", "Estado", "Actualizado", "Acción"),
-    ):
-        with col:
-            st.caption(label)
-    st.divider()
-    selected = _selection() if st.session_state.get("ex_v2_selected_work") == work.id else set()
-    for idx, doc in enumerate(docs):
-        decision = plan.decisions[doc.id]
-        file_name = _full_name(doc)
-        with st.container(key=f"ex_v2_file_{doc.id}"):
-            a, b, c, d, e, f, g = st.columns(
-                [0.42, 1.4, 2.5, 0.65, 1.08, 0.88, 0.97],
-                gap="small", vertical_alignment="center",
-            )
-            with a:
-                if decision.selectable:
-                    key = f"ex_v2_cb_row_{doc.id}"
-                    if key not in st.session_state:
-                        st.session_state[key] = doc.id in selected
-                    st.checkbox(
-                        f"Incluir {file_name}", key=key,
-                        label_visibility="collapsed",
-                        on_change=_toggle_doc_row,
-                        args=(work.id, doc.id, plan.eligible_ids),
-                    )
-                else:
-                    st.markdown("·")
-            with b:
+        headings = st.columns(
+            [0.42, 1.3, 2.5, 0.6, 1.15, 1.25, 0.90],
+            gap="small", vertical_alignment="center",
+        )
+        for col, label in zip(
+            headings,
+            ("", "DOCUMENTO", "ARCHIVO", "PÁGS.", "ESTADO", "ÚLTIMO ANÁLISIS", ""),
+        ):
+            with col:
                 st.markdown(
-                    f'<span class="aud-type">{escape(code_from_filename(doc.name, doc.mime_type) or "SIN TIPO")}</span>',
+                    f'<span class="aud-th">{escape(label)}</span>',
                     unsafe_allow_html=True,
                 )
-            with c:
-                st.markdown(
-                    f'<span class="aud-file-path" title="{escape(file_name, quote=True)}">'
-                    f'{escape(file_name)}</span>', unsafe_allow_html=True,
-                )
-            with d:
-                st.caption(f"{doc.size_bytes / 1_000_000:.2f} MB" if doc.size_bytes else "—")
-            with e:
-                st.markdown(pildora_estado(_state_for(doc, states)), unsafe_allow_html=True)
-            with f:
-                st.caption(_date_short(doc.modified_time))
-            with g:
-                if _state_for(doc, states) == "Analizado":
-                    st.button(
-                        "Ver datos", key=f"ex_v2_view_{doc.id}",
-                        on_click=_open_document, args=(work.id, doc.id),
-                        use_container_width=True,
-                    )
-                elif decision.disposition in ("blocked", "needs_sync", "not_registered") or _state_for(doc, states) in ("Revisar error", "Desactualizado", "Parcial"):
-                    st.button(
-                        "Revisar", key=f"ex_v2_review_{doc.id}",
-                        on_click=_open_document, args=(work.id, doc.id),
-                        use_container_width=True,
-                    )
-                elif decision.selectable:
-                    st.button(
-                        "Analizar", key=f"ex_v2_choose_{doc.id}",
-                        on_click=_select_one, args=(work.id, doc.id),
-                        use_container_width=True,
-                        disabled=is_demo,
-                    )
-                else:
-                    st.caption("Renombrar en Drive")
 
-    other = [doc for doc in work.other_files if doc not in docs]
-    if other:
-        st.markdown("#### Otros archivos detectados")
-        for doc in other:
-            name = _full_name(doc)
-            st.markdown(
-                f'<div class="aud-unrecognized">{icono("file", size=15)} '
-                f'<span class="aud-file-path">{escape(name)}</span>'
-                f'<span class="aud-secondary"> · Sin extractor compatible</span></div>',
-                unsafe_allow_html=True,
-            )
+        selected = _selection()
+        for doc in docs:
+            decision = plan.decisions[doc.id]
+            file_name = _full_name(doc)
+            state = _state_for(doc, states)
+            with st.container(key=f"ex_v2_file_{doc.id}"):
+                if doc.id in selected:
+                    st.markdown(
+                        '<span class="aud-row-selected" aria-hidden="true"></span>',
+                        unsafe_allow_html=True,
+                    )
+                a, b, c, d, e, f, g = st.columns(
+                    [0.42, 1.3, 2.5, 0.6, 1.15, 1.25, 0.90],
+                    gap="small", vertical_alignment="center",
+                )
+                with a:
+                    if decision.selectable:
+                        key = f"ex_v2_cb_row_{doc.id}"
+                        if key not in st.session_state:
+                            st.session_state[key] = doc.id in selected
+                        st.checkbox(
+                            f"Incluir {file_name}", key=key,
+                            label_visibility="collapsed",
+                            on_change=_toggle_doc_row,
+                            args=(work.id, doc.id, plan.eligible_ids),
+                        )
+                    else:
+                        st.markdown('<span class="aud-tree-spacer"></span>',
+                                    unsafe_allow_html=True)
+                with b:
+                    st.markdown(
+                        '<span class="aud-doc-name">'
+                        f'{escape(document_label(doc))}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with c:
+                    st.markdown(
+                        f'<span class="aud-file-path" title="{escape(file_name, quote=True)}">'
+                        f'{escape(file_name)}</span>', unsafe_allow_html=True,
+                    )
+                with d:
+                    st.markdown(
+                        f'<span class="aud-pages">{escape(_pages_label(doc, is_demo))}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with e:
+                    st.markdown(pildora_estado(state), unsafe_allow_html=True)
+                with f:
+                    st.markdown(
+                        f'<span class="aud-last-analysis">'
+                        f'{escape(_last_analysis(doc, states, tables))}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with g:
+                    if state == "Analizado":
+                        st.button(
+                            "Ver datos", key=f"ex_v2_view_{doc.id}",
+                            on_click=_open_document, args=(work.id, doc.id),
+                            use_container_width=True,
+                        )
+                    elif decision.disposition in (
+                        "blocked", "needs_sync", "not_registered",
+                    ) or state in ("Revisar error", "Desactualizado", "Parcial"):
+                        st.button(
+                            "Revisar", key=f"ex_v2_review_{doc.id}",
+                            on_click=_open_document, args=(work.id, doc.id),
+                            use_container_width=True,
+                        )
+                    elif decision.selectable:
+                        st.button(
+                            "Analizar", key=f"ex_v2_choose_{doc.id}",
+                            on_click=_select_one, args=(work.id, doc.id),
+                            use_container_width=True, disabled=is_demo,
+                        )
+                    else:
+                        st.caption("Renombrar")
+
+        other = [doc for doc in work.other_files if doc not in docs]
+        if other:
+            st.markdown('<div class="aud-other-heading">Otros archivos detectados</div>',
+                        unsafe_allow_html=True)
+            for doc in other:
+                name = _full_name(doc)
+                st.markdown(
+                    f'<div class="aud-unrecognized">{icono("file", size=14)} '
+                    f'<span class="aud-file-path">{escape(name)}</span>'
+                    f'<span class="aud-secondary"> · Sin extractor compatible</span>'
+                    '</div>', unsafe_allow_html=True,
+                )
 
 
 def _toggle_doc_row(work_id: str, doc_id: str, eligible_ids: frozenset[str]) -> None:
