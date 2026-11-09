@@ -68,7 +68,7 @@ def make_record(*, modern: bool = True) -> ContractRecord:
 
 
 class ContractTableTests(unittest.TestCase):
-    def test_main_table_has_normalized_modalities_dates_and_vat_amounts(self):
+    def test_main_table_has_normalized_modalities_dates_and_single_amount(self):
         row = contract_table_rows((make_record(),))[0]
         self.assertEqual(len(FIELD_LABELS_V2), 16)
         self.assertIn("Personas que participan en el contrato", row)
@@ -78,12 +78,13 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(row["Fecha de inicio contractual"], "02/06/2026")
         self.assertEqual(row["Fecha de término contractual"], "30/09/2026")
         self.assertEqual(row["Fecha de firma del contrato"], "04/05/2026")
-        self.assertEqual(row["Monto del contrato con IVA"], "$1,234,567.89 MXN")
-        self.assertEqual(row["Monto del contrato sin IVA"], "$1,064,282.66 MXN")
-        self.assertEqual(row["IVA utilizado en el cálculo"], "16% (supuesto; verificar)")
-        self.assertEqual(row["Monto del contrato (IVA no indicado)"], "—")
+        self.assertEqual(row["Monto del contrato"], "$1,234,567.89")
         self.assertEqual(row["Anticipo"], "30.00%")
-        self.assertNotIn("Monto del contrato", row)
+        self.assertEqual(
+            [col for col in row if col.startswith("Monto del contrato")],
+            ["Monto del contrato"],
+        )
+        self.assertFalse(any("IVA" in col for col in row))
         self.assertNotIn("Campos extraídos", row)
         self.assertNotIn("Estado de extracción", row)
         self.assertEqual(row["Legislación citada en el contrato"],
@@ -108,7 +109,7 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(row["Representante técnico"], "—")
         self.assertEqual(row["Personas que participan en el contrato"], "—")
         self.assertEqual(row["Ámbito normativo preliminar"], "No determinado (versión anterior)")
-        self.assertEqual(row["Monto del contrato sin IVA"], "$1,064,282.66 MXN")
+        self.assertEqual(row["Monto del contrato"], "$1,234,567.89")
 
     def test_multiple_records_stay_one_row_per_contract(self):
         rows = contract_table_rows((make_record(), make_record(modern=False)))
