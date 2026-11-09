@@ -77,6 +77,7 @@ def visual_preview():
                     "cache_key": result_id, "documento_id": d.id,
                     "obra_id": work.id, "estado": "COMPLETADO",
                     "resultado_json": '{"ejemplo":"No es una extracción real"}',
+                    "actualizado_utc": "2026-11-07T13:14:00+00:00",
                     "version_esquema": {
                         "CONTRATO": "contrato-v2", "PUC": "puc-v1",
                         "DICTAMEN_AD": "dictamen-ad-v1",
