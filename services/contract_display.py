@@ -205,7 +205,7 @@ def financial_cells(record: ContractRecord, raw: str) -> dict[str, str]:
     if not explicit:
         rate = IVA_ESTANDAR
     cells["IVA utilizado en el cálculo"] = (
-        f"{rate * 100:g}% (documentado)" if explicit
+        f"{(rate * 100).normalize():f}% (documentado)" if explicit
         else "16% (supuesto; verificar)"
     )
     if basis == "con":
