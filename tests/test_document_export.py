@@ -71,8 +71,10 @@ class DocumentExportTests(unittest.TestCase):
         ])
         second = self._tables(data)
         self.assertEqual(second["OBRAS"][0][0], record_id)
-        self.assertEqual(second["OBRAS"][1][0], 2)
-        self.assertIn([2, "laterFolder", "docLater", "PUC.pdf", "PUC",
+        # El fixture ya contiene otra obra registrada sin PDF (ID 2).
+        # No renumerarla mantiene las relaciones históricas.
+        self.assertEqual(second["OBRAS"][1][0], 3)
+        self.assertIn([3, "laterFolder", "docLater", "PUC.pdf", "PUC",
                        "Pendiente", "Sin análisis vigente", "", ""], second["DOCUMENTOS"])
 
     def test_stale_or_cross_work_cache_not_exported_as_current(self):
