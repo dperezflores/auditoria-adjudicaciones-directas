@@ -9,7 +9,7 @@ from typing import Any, Sequence
 from services.contract_portfolio import ContractRecord
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_display import (
-    financial_cells, normalize_award_method, normalize_contract_type, short_date,
+    format_contract_amount, normalize_award_method, normalize_contract_type, short_date,
 )
 
 
@@ -61,7 +61,7 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str
         for key, label in FIELD_LABELS_V2:
             literal = values[key]
             if key == "monto_contrato":
-                row.update(financial_cells(record, literal))
+                row[label] = format_contract_amount(literal, record.currency)
             elif key == "tipo_contrato":
                 row[label] = normalize_contract_type(literal)
             elif key == "modalidad_adjudicacion":
