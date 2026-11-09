@@ -9,6 +9,21 @@ recomendadas: 9.1-B (evidencia textual, sin dependencia PDF nueva),
 9.4-B (barra lateral colapsada). Ninguna modificación se fusionará a main
 sin aprobación posterior específica.
 
+**Modificación posterior al Paso B (corrección visual aprobada):**
+El usuario aportó el PDF de la **Propuesta A · Árbol y detalle**, señaló
+las diferencias con la aplicación y autorizó la corrección visual.
+La maqueta incluye explícitamente «documentos seleccionados en 2 obras».
+Por tanto, esta autorización **supersede solamente la decisión 9.3-A**:
+el panel puede seleccionar documentos de varias obras y el coordinador de
+la interfaz invoca el backend existente por obra, respetando el máximo
+**global** de 10 documentos por ejecución. No cambia el guardado ni los
+servicios de IA. Las demás decisiones y el respaldo permanecen intactos.
+
+La maqueta también solicita «Págs.» y «Último análisis»; el inventario
+real no contiene número de páginas, de modo que se muestra «—» sin inventarlo.
+La fecha de último análisis procede de Extracciones cuando está vigente.
+Solo el modo de demostración muestra páginas ficticias.
+
 **Paso A:** tema `ui/theme.py` / `ui/styles.css`, componentes base,
 encabezado y navegación superior en `app.py` y `.streamlit/config.toml`.
 Los servicios, los extractores y las pruebas existentes permanecen intactos.
