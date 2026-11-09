@@ -13,7 +13,8 @@ from security.app_access import require_access
 from services.drive_service import is_configured
 from services.sheets_service import storage_configured
 from ui.components import encabezado_app
-from ui.expedientes import _refresh_inventory, render_expedientes
+from ui.expedientes import _refresh_inventory
+from ui.explorer_panel import render_expedientes
 from ui.resultados import render_results
 
 st.set_page_config(
