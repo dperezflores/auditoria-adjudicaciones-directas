@@ -14,6 +14,9 @@ from services.contract_portfolio import parse_amount
 from services.drive_service import _list_children, validate_id, FOLDER_MIME, XLSX_MIME
 
 FILENAME = "ADJUDICACION_LIM_2021_2026.xlsx"
+# Alcance temporal del piloto: todas las obras evaluadas son del Municipio de León.
+# No inferir municipio del objeto contractual, ni permitir seleccionar otro.
+PILOT_MUNICIPALITY = "León"
 YEARS = range(2021, 2027)
 CENT = Decimal("0.01")
 MUNICIPAL_FIELDS = ("Año", "Municipio", "Municipio_normalizado", "Grupo",
@@ -226,15 +229,14 @@ def year_from_date(value: str) -> int | None:
     return None
 
 def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
-             municipality: str | None = None, iva: str | None = None,
-             year: int | None = None) -> Result:
+             iva: str | None = None, year: int | None = None) -> Result:
     fields = record.full_values or {}
     law,funding = fields.get("legislacion_citada",""),fields.get("fuente_financiamiento","")
     original_regime = infer_regime(law,funding)
     regime = regime or original_regime
-    names = sorted({x.municipality for x in catalog.municipal.values()})
-    inferred = infer_municipality(fields.get("obra_servicio",""),names)
-    municipality = inferred if municipality is None else municipality
+    # Para este piloto el municipio es un parámetro de alcance institucional,
+    # NO un dato que dependa de la calidad de extracción del contrato.
+    municipality = PILOT_MUNICIPALITY
     method = normalize_award_method(fields.get("modalidad_adjudicacion",""))
     original_year = year_from_date(fields.get("fecha_firma_contrato",""))
     year = original_year if year is None else year
@@ -264,8 +266,6 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
         warnings.append("Régimen confirmado manualmente: verificar su sustento documental.")
     if regime not in ("Municipal","Estatal"):
         warnings.append("Régimen no determinado por ley citada y recursos.")
-    if regime == "Municipal" and not municipality:
-        warnings.append("Municipio no identificable inequívocamente en el objeto.")
     if method not in METHODS:
         warnings.append("Modalidad no reconocida.")
     if foreign_currency:
