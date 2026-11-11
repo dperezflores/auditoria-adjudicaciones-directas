@@ -11,6 +11,7 @@ from typing import Any
 from openpyxl import load_workbook
 from services.contract_display import short_date, normalize_award_method
 from services.contract_portfolio import parse_amount
+from services.amount_iva import identify_contract_amount_iva
 from services.drive_service import _list_children, validate_id, FOLDER_MIME, XLSX_MIME
 
 FILENAME = "ADJUDICACION_LIM_2021_2026.xlsx"
@@ -214,12 +215,9 @@ def infer_regime(law: str, funding: str) -> str:
         return "Por confirmar"
     return "Municipal" if m else "Estatal" if e else "Por confirmar"
 
-def infer_iva(raw: str) -> str:
-    s = fold(raw)
-    includes = bool(re.search(r"\biva incluido\b|\bincluye (?:el )?iva\b|\bcon iva\b",s))
-    excludes = bool(re.search(r"\bsin iva\b|\bno incluye iva\b|\bmas iva\b|\bantes de iva\b",s))
-    return ("Con IVA (16%)" if includes and not excludes else
-            "Sin IVA" if excludes and not includes else "Por confirmar")
+def infer_iva(raw: str, evidence: str = "") -> str:
+    """Reutilizar la evidencia literal ligada al importe para AD-06."""
+    return identify_contract_amount_iva(raw, evidence=evidence).basis
 
 def year_from_date(value: str) -> int | None:
     val = short_date(value)
@@ -247,7 +245,16 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     foreign_currency = bool(re.search(
         r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", raw, re.IGNORECASE,
     ))
-    inferred_iva = infer_iva(raw)
+    # La extracción v2 ya conserva página y evidencia de monto_contrato.
+    # Un «IVA INCLUIDO» ligado a ese importe permite clasificar incluso si
+    # Gemini dejó únicamente la cantidad en monto_contrato.valor.
+    amount_evidence = record.evidence.get("monto_contrato", {}) if fields else {}
+    quote = (
+        str(amount_evidence.get("evidencia") or "")
+        if isinstance(amount_evidence, dict) else ""
+    )
+    iva_detection = identify_contract_amount_iva(raw, evidence=quote)
+    inferred_iva = iva_detection.basis
     iva = iva or inferred_iva
     net = None
     if gross is not None and gross > 0 and not foreign_currency:
@@ -272,6 +279,11 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
         warnings.append("El importe cita una divisa distinta de MXN; los límites son en pesos.")
     if net is None:
         warnings.append("Importe comparable sin IVA no determinado.")
+    if iva_detection.source == "Indicaciones contradictorias en monto y evidencia":
+        warnings.append(
+            "El valor del monto y su evidencia contienen indicaciones "
+            "contradictorias del IVA; cotejar cláusula original."
+        )
     if iva != inferred_iva:
         warnings.append("Tratamiento de IVA confirmado manualmente; verificar el contrato.")
     row = (catalog.municipal.get((year,fold(municipality).upper())) if
