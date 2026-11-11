@@ -136,6 +136,14 @@ class LimitsTests(unittest.TestCase):
         self.assertEqual(override.state,"Dentro del límite")
         self.assertTrue(any("manualmente" in x for x in override.warnings))
 
+    def test_usd_and_eur_must_not_be_compared_with_peso_thresholds(self):
+        for literal in ("USD 2,000,000.00 sin IVA", "€2,000,000.00 sin IVA"):
+            with self.subTest(literal=literal):
+                r=evaluate(contract(monto_contrato=literal),self.catalog)
+                self.assertEqual(r.state,"Requiere revisión")
+                self.assertIsNone(r.net)
+                self.assertTrue(any("divisa" in x for x in r.warnings))
+
     def test_mixed_federal_and_inconclusive_are_not_approved(self):
         self.assertEqual(infer_regime("Ley de Obras Públicas y Servicios Relacionados "
                                      "con las Mismas", "Recurso municipal"),
