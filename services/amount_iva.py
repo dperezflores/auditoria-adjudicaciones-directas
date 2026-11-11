@@ -32,15 +32,18 @@ def _plain(text: str) -> str:
 
 _INCLUDES = (
     r"\biva\s+incluid[oa]s?\b",
-    r"\b(?:con|incluye|incluido)\s+(?:el\s+)?iva\b",
+    r"\bcon\s+(?:el\s+)?iva\b",
+    r"(?<!no )\bincluye\s+(?:el\s+)?iva\b",
+    r"\bincluido\s+(?:el\s+)?iva\b",
     r"\biva\s+(?:ya\s+)?comprendido\b",
     r"\bimpuesto\s+al\s+valor\s+agregado\s+incluid[oa]\b",
-    r"\bincluye\s+(?:el\s+)?impuesto\s+al\s+valor\s+agregado\b",
+    r"(?<!no )\bincluye\s+(?:el\s+)?impuesto\s+al\s+valor\s+agregado\b",
 )
 _EXCLUDES = (
     r"\bsin\s+iva\b",
     r"\biva\s+no\s+incluid[oa]\b",
     r"\bno\s+incluye\s+(?:el\s+)?iva\b",
+    r"\bno\s+incluye\s+(?:el\s+)?impuesto\s+al\s+valor\s+agregado\b",
     r"\bmas\s+(?:el\s+)?iva\b",
     r"\biva\s+por\s+separado\b",
     r"\bantes\s+(?:de|del)\s+iva\b",
