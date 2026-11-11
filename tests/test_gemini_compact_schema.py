@@ -92,7 +92,7 @@ class CompactGeminiTests(unittest.TestCase):
             convertir_respuesta_compacta(data)
 
     def test_new_version_invalidates_previous_cache(self):
-        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v4")
+        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v5")
 
     def test_offline_genai_sdk_accepts_compact_response_json_schema(self):
         # Instancia del SDK local, sin cliente ni conexión ni generación.
