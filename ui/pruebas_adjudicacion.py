@@ -27,7 +27,7 @@ def _source_link(url: str) -> None:
         or host == "finanzas.guanajuato.gob.mx"
         or host == "transparencia.guanajuato.gob.mx"
         or host.endswith(".congresogto.gob.mx")
-        or host.endswith(".congreso-gto.s3.amazonaws.com")
+        or host == "congreso-gto.s3.amazonaws.com"
     ):
         st.link_button("Consultar referencia oficial", url)
 
@@ -64,11 +64,13 @@ def render_award_tests() -> None:
         try:
             with st.spinner("Leyendo Recursos y sus dos tablas históricas..."):
                 st.session_state["award_limits_catalog"] = _load_catalog()
-        except (LimitsError, Exception) as exc:
+        except LimitsError as exc:
+            st.error("Catálogo de límites: " + str(exc))
+            return
+        except Exception:
             st.error(
-                "No se pudo leer el catálogo desde la carpeta Recursos: "
-                + str(exc)
-                + ". Comprueba que la cuenta de servicio tenga acceso al archivo."
+                "No se pudo conectar con el catálogo de límites en Recursos. "
+                "Comprueba el acceso de la cuenta de servicio a esa carpeta y archivo."
             )
             return
     if "award_limits_contracts" not in st.session_state:
