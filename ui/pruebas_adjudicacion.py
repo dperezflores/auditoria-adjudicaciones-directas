@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from services.award_limits import (
-    Catalog, LimitsError, METHODS, evaluate, fold, infer_iva, infer_municipality,
+    Catalog, LimitsError, PILOT_MUNICIPALITY, evaluate, infer_iva,
     infer_regime, money, read_drive_catalog, year_from_date,
 )
 from services.contract_portfolio import read_contract_portfolio
@@ -49,9 +49,11 @@ def render_award_tests() -> None:
         "(municipal o estatal, 2021–2026). Solo consulta contratos y Recursos."
     )
     st.info(
-        "Se comparan montos **sin IVA** con el régimen y año correspondientes. "
-        "La revisión por importe no determina por sí sola la legalidad de la contratación, "
-        "el origen normativo aplicable, excepciones ni posible fraccionamiento."
+        "**Piloto municipal: León, Guanajuato (fijo).** Cuando corresponde "
+        "la Base municipal, se usa automáticamente la fila de León y el grupo "
+        "que le corresponda en el ejercicio evaluado. La Base estatal no depende "
+        "del grupo municipal. Los importes se comparan sin IVA y el resultado "
+        "no constituye por sí solo una conclusión jurídica definitiva."
     )
     if not is_configured(st.secrets) or not storage_configured(st.secrets):
         st.error("Se requiere configurar Drive, Google Sheets y la cuenta de servicio.")
@@ -92,15 +94,14 @@ def render_award_tests() -> None:
         st.warning("Todavía no hay contratos analizados para ejecutar la prueba.")
         return
 
-    names = sorted({x.municipality for x in catalog.municipal.values()})
     evaluations = [
         (record, evaluate(record, catalog))
         for record in portfolio.records
     ]
     st.markdown("### Evaluación automática de los contratos")
     st.caption(
-        "Los resultados sin confirmación de IVA, municipio, régimen o año "
-        "aparecen como «Requiere revisión»; no se consideran conformes."
+        "Los resultados sin confirmación de IVA, régimen o año "
+        "aparecen como «Requiere revisión»; el municipio se fija a León."
     )
     rows = []
     for record, result in evaluations:
@@ -111,8 +112,10 @@ def render_award_tests() -> None:
             "Año": result.year or "—",
             "Régimen": result.regime,
             "Municipio / Grupo": (
-                f"{limit.municipality} / {limit.group}" if limit and limit.regime == "Municipal"
-                else "No aplica" if limit else "—"
+                f"{PILOT_MUNICIPALITY} / {limit.group}"
+                if limit and limit.regime == "Municipal"
+                else f"{PILOT_MUNICIPALITY} / No aplica"
+                if limit else f"{PILOT_MUNICIPALITY} / —"
             ),
             "Modalidad": result.method,
             "Monto extraído": money(result.gross),
@@ -177,13 +180,11 @@ def render_award_tests() -> None:
                  "del procedimiento, especialmente si la adjudicación y firma difieren.",
         )
     with middle:
-        municipality_auto = infer_municipality(values.get("obra_servicio",""), names)
-        muni_options = ["Por confirmar", *names]
-        municipality = st.selectbox(
-            "Municipio (si el régimen es municipal)", muni_options,
-            index=muni_options.index(municipality_auto) if municipality_auto in muni_options else 0,
-            disabled=regime != "Municipal", key=f"limits_muni_{record.documento_id}",
-            help="Solo se completa automáticamente si el objeto cita expresamente el municipio.",
+        st.markdown(f"**Municipio de revisión:** {PILOT_MUNICIPALITY}, Guanajuato")
+        st.caption(
+            "Fijo para todos los contratos de este piloto. "
+            "Su grupo A/B/C se obtiene del catálogo en el año seleccionado "
+            "cuando el régimen es municipal."
         )
         raw_amount = values.get("monto_contrato","")
         iva_detected = infer_iva(raw_amount)
@@ -203,7 +204,6 @@ def render_award_tests() -> None:
 
     manual = evaluate(
         record, catalog, regime=regime,
-        municipality=municipality if municipality != "Por confirmar" else "",
         iva=iva, year=year if isinstance(year,int) else None,
     )
     st.markdown("#### Resultado detallado")

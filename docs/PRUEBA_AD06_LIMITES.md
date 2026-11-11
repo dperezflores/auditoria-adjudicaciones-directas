@@ -4,6 +4,8 @@
 
 Prueba de gabinete por importe. Se incorpora únicamente en la pestaña **Pruebas de adjudicación** de la app original (`main`). **No sustituye** las cinco pruebas AD inicialmente previstas y **no modifica** la app de pruebas visual (`ui/fase1-explorador`).
 
+**Alcance temporal del piloto:** todas las evaluaciones municipales se realizan con el municipio **León, Guanajuato**, fijado en el motor de la prueba. No se requiere que el objeto del contrato mencione León y el usuario no selecciona un municipio. La conclusión queda condicionada a que el expediente realmente pertenezca al universo de obras de León. Este alcance debe revisarse antes de utilizar AD-06 para otros municipios.
+
 ## Fuente única de los montos
 
 La app consulta mediante la cuenta de servicio de Google Drive, **solo lectura**, la ruta:
@@ -18,7 +20,7 @@ Solo abre las hojas **Base municipal** (276 filas: 46 municipios x seis años) y
 | --- | --- |
 | `legislacion_citada` | Identificación preliminar de la LOPYSRM local o norma federal |
 | `fuente_financiamiento` | Distinguir municipal o estatal solo si es explícito; fondos mixtos/federales requieren revisión |
-| `obra_servicio` | Identificar municipio **solo si se expresa** como municipio |
+| `obra_servicio` | Se conserva como dato contractual, pero **no determina el municipio del piloto**: se aplica León. |
 | `fecha_firma_contrato` | Ejercicio inicial (año de firma); validar si el procedimiento inició en otro año |
 | `modalidad_adjudicacion` | Clasificación AD / licitación simplificada / licitación pública |
 | `monto_contrato` | Importe original; conversión a monto sin IVA solo si se conoce tratamiento |
@@ -27,10 +29,10 @@ Los contratos en versiones antiguas sin esos campos quedan como **Requiere revis
 
 ## Determinación de la tabla
 
-- LOPYSRM de Guanajuato **y** recursos municipales explícitos -> **Base municipal**, índice año + municipio; el grupo histórico A/B/C se lee desde el catálogo para ese mismo año.
+- LOPYSRM de Guanajuato **y** recursos municipales explícitos -> **Base municipal**, índice año + **León fijo**; el grupo histórico A/B/C se lee desde el catálogo para ese mismo año.
 - LOPYSRM de Guanajuato **y** recursos estatales explícitos -> **Base estatal**, índice año.
 - Ley federal, fondos federales/mixtos, legislación o fuente indeterminada -> **Requiere revisión**. Las excepciones normativas y el régimen efectivo no se presumen.
-- La interfaz permite confirmar temporalmente año, municipio, base normativa y tratamiento del importe. Estas confirmaciones **no modifican** la extracción, el contrato, la tabla de Drive ni la evaluación automática general; el detalle marca las confirmaciones manuales.
+- La interfaz permite confirmar temporalmente **año, base normativa y tratamiento del importe**. El municipio se muestra como **León (fijo)**, sin selector. Estas confirmaciones **no modifican** la extracción, el contrato, la tabla de Drive ni la evaluación automática general; el detalle marca las confirmaciones manuales.
 
 ## Resultados
 
@@ -38,7 +40,7 @@ Los contratos en versiones antiguas sin esos campos quedan como **Requiere revis
 2. **Excede el límite:** AD o LS sobrepasan su máximo ordinario.
 3. **Procedimiento más competitivo:** se eligió LS/LP para un importe inferior al comienzo de su rango ordinario. **No es automáticamente irregularidad**.
 4. **Dentro del rango de LP:** el monto alcanza LP mínimo; la tabla no establece máximo de licitación pública.
-5. **Requiere revisión:** falta cualquier dato esencial (año, municipio municipal, régimen, modalidad, monto comparable sin IVA) o falta fila en el histórico.
+5. **Requiere revisión:** falta cualquier dato esencial (año, régimen, modalidad, monto comparable sin IVA) o falta la fila de **León** para el ejercicio en el histórico.
 
 Los límites e importes son **sin IVA**. Cuando el contrato dice IVA incluido se divide el importe entre 1.16 y redondea a centavos; cuando indica sin IVA no se transforma. Si el tratamiento no consta no se asume y la prueba queda pendiente de confirmación.
 
@@ -52,4 +54,4 @@ La aplicación genera un CSV del listado automático y muestra un comparativo de
 
 `python -m unittest discover -s tests -v`
 
-Incluye las pruebas de bordes por centavo, vigencia 2021–2026, cambios de grupo por ejercicio, lectura del XLSX, detección de régimen, recurso mixto/federal, importe ambiguo, IVA, municipio y vigencia de contrato-v2.
+Incluye las pruebas de bordes por centavo, vigencia 2021–2026, cambios de grupo por ejercicio, lectura del XLSX, detección de régimen, recurso mixto/federal, importe ambiguo, IVA, **León fijo** aun sin municipio en el objeto contractual y vigencia de contrato-v2.
