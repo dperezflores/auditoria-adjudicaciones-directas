@@ -94,7 +94,8 @@ def _rows(book: Any, tab: str, required: tuple[str, ...]) -> list[dict]:
     if not head:
         raise LimitsError("Hoja sin encabezados: " + tab)
     h = [str(x).strip() if x is not None else "" for x in head]
-    if len(set(h)) != len(h) or not set(required).issubset(h):
+    nonempty = [col for col in h if col]
+    if len(set(nonempty)) != len(nonempty) or not set(required).issubset(h):
         raise LimitsError("Encabezados incompatibles en " + tab)
     index = {k: h.index(k) for k in required}
     return [{k: r[i] if i < len(r) else None for k,i in index.items()}
@@ -239,10 +240,15 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     year = original_year if year is None else year
     raw = fields.get("monto_contrato","")
     gross = parse_amount(raw)
+    # Los límites se expresan en pesos mexicanos; divisas expresas distintas
+    # no deben compararse contra MXN sin una conversión documental acreditada.
+    foreign_currency = bool(re.search(
+        r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", raw, re.IGNORECASE,
+    ))
     inferred_iva = infer_iva(raw)
     iva = iva or inferred_iva
     net = None
-    if gross is not None and gross > 0:
+    if gross is not None and gross > 0 and not foreign_currency:
         if iva == "Sin IVA":
             net = gross.quantize(CENT, rounding=ROUND_HALF_UP)
         elif iva == "Con IVA (16%)":
@@ -262,6 +268,8 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
         warnings.append("Municipio no identificable inequívocamente en el objeto.")
     if method not in METHODS:
         warnings.append("Modalidad no reconocida.")
+    if foreign_currency:
+        warnings.append("El importe cita una divisa distinta de MXN; los límites son en pesos.")
     if net is None:
         warnings.append("Importe comparable sin IVA no determinado.")
     if iva != inferred_iva:
