@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 from openpyxl import Workbook
 from services.award_limits import (
-    LimitsError, parse_catalog, evaluate, infer_regime, infer_iva,
+    LimitsError, PILOT_MUNICIPALITY, parse_catalog, evaluate, infer_regime, infer_iva,
     infer_municipality, money, read_drive_catalog,
 )
 from services.contract_portfolio import prepare_contract_portfolio
@@ -155,12 +155,43 @@ class LimitsTests(unittest.TestCase):
         self.assertEqual(evaluate(contract(fuente_financiamiento="Ramo 33"),self.catalog).state,
                          "Requiere revisión")
 
-    def test_missing_municipality_and_manual_override(self):
-        r=evaluate(contract(obra_servicio="Rehabilitación de caminos rurales"),self.catalog)
-        self.assertEqual(r.state,"Requiere revisión")
-        valid=evaluate(contract(obra_servicio="Rehabilitación de caminos rurales"),
-                       self.catalog,municipality="León")
-        self.assertEqual(valid.state,"Dentro del límite")
+    def test_municipality_is_fixed_to_leon_when_contract_does_not_mention_it(self):
+        self.assertEqual(PILOT_MUNICIPALITY, "León")
+        for object_text in (
+            "",
+            "Rehabilitación de caminos rurales",
+            "Rehabilitación en el municipio de Cortazar",
+        ):
+            with self.subTest(object_text=object_text):
+                result = evaluate(contract(obra_servicio=object_text), self.catalog)
+                self.assertEqual(result.municipality, "León")
+                self.assertEqual(result.row.municipality, "León")
+                self.assertEqual(result.row.group, "C")
+                self.assertEqual(result.row.sheet, "Base municipal")
+                self.assertEqual(result.state, "Dentro del límite")
+                self.assertFalse(
+                    any("Municipio no identificable" in w for w in result.warnings)
+                )
+
+    def test_leon_historical_group_is_selected_by_fiscal_year(self):
+        for year in range(2021, 2027):
+            with self.subTest(year=year):
+                result = evaluate(contract(
+                    fecha_firma_contrato=f"15 de diciembre de {year}",
+                    obra_servicio="Sin referencia territorial",
+                ), self.catalog)
+                self.assertEqual(result.year, year)
+                self.assertEqual(result.row.key, f"{year}|LEON")
+                self.assertEqual(result.row.group, "C")
+
+    def test_state_regime_is_independent_of_leon_group(self):
+        result = evaluate(contract(
+            fuente_financiamiento="RECURSO ESTATAL",
+            obra_servicio="No indica municipio",
+        ), self.catalog)
+        self.assertEqual(result.municipality, "León")
+        self.assertEqual(result.row.sheet, "Base estatal")
+        self.assertEqual(result.row.group, "")
 
     def test_unsupported_year_and_missing_specialized_data(self):
         self.assertEqual(
