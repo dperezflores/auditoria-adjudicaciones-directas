@@ -14,6 +14,7 @@ from services.award_limits import (
     infer_regime, money, read_drive_catalog, year_from_date,
 )
 from services.contract_portfolio import read_contract_portfolio
+from services.amount_iva import identify_record_iva
 from services.drive_service import create_drive_client, is_configured
 from services.sheets_service import create_sheets_client, storage_configured
 
@@ -119,6 +120,7 @@ def render_award_tests() -> None:
             ),
             "Modalidad": result.method,
             "Monto extraído": money(result.gross),
+            "IVA del importe": identify_record_iva(record).basis,
             "Monto comparable sin IVA": money(result.net),
             "Límite AD": money(limit.ad_max) if limit else "—",
             "Límite LS": money(limit.ls_max) if limit else "—",
@@ -187,7 +189,8 @@ def render_award_tests() -> None:
             "cuando el régimen es municipal."
         )
         raw_amount = values.get("monto_contrato","")
-        iva_detected = infer_iva(raw_amount)
+        iva_status = identify_record_iva(record)
+        iva_detected = iva_status.basis
         iva_options = ["Por confirmar", "Con IVA (16%)", "Sin IVA"]
         iva = st.selectbox(
             "Tratamiento del monto extraído", iva_options,
@@ -200,6 +203,13 @@ def render_award_tests() -> None:
         st.caption("Recurso: " + (values.get("fuente_financiamiento") or "No localizado"))
         st.caption("Firma: " + (values.get("fecha_firma_contrato") or "No localizada"))
         st.caption("Monto: " + (values.get("monto_contrato") or "No localizado"))
+        st.markdown("**IVA del importe contractual (detección documental)**")
+        st.caption(
+            f"{iva_status.basis} · {iva_status.source}"
+            + (f" · Página {iva_status.page}" if iva_status.page else "")
+        )
+        if iva_status.quote and iva_status.source == "Evidencia de la cláusula del monto":
+            st.caption("Cita textual del monto: " + iva_status.quote)
         st.caption("Objeto: " + (values.get("obra_servicio") or "No localizado"))
 
     manual = evaluate(
@@ -231,8 +241,9 @@ def render_award_tests() -> None:
         st.caption("Aspectos pendientes de confirmar: " + " · ".join(manual.warnings))
     st.caption(
         "Las selecciones de revisión son temporales y NO modifican los documentos "
-        "ni los campos extraídos en la base. La tabla general muestra la "
-        "evaluación automática sin esas confirmaciones."
+        "ni los campos extraídos en la base. La tabla general aprovecha el "
+        "IVA detectado en el valor o en la evidencia de la cláusula contractual "
+        "sin necesidad de volver a analizar PDF."
     )
     st.divider()
     with st.expander("Otras cinco pruebas de adjudicación (planeadas)"):
