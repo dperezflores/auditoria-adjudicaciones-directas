@@ -44,6 +44,17 @@ Los contratos en versiones antiguas sin esos campos quedan como **Requiere revis
 
 Los límites e importes son **sin IVA**. Cuando el contrato dice IVA incluido se divide el importe entre 1.16 y redondea a centavos; cuando indica sin IVA no se transforma. Si el tratamiento no consta no se asume y la prueba queda pendiente de confirmación.
 
+### Detección del IVA en la cláusula contractual (contrato-prompt-v5)
+
+El extractor sigue guardando los **16 campos literales de contrato-v2** sin alterar la estructura de `DatosContratoV2`. Para el campo `monto_contrato`, el nuevo prompt exige una cita de `evidencia` que **contenga el importe total y la aclaración fiscal**, siempre que aparezcan en la misma cláusula. La cita conserva página y texto literal, incluso si «IVA INCLUIDO» aparece después de la cantidad en letras o de «55/100 M.N.».
+
+AD-06 clasifica el IVA primero desde `monto_contrato.valor` y después, cuando sea necesario, desde `monto_contrato.evidencia`. Solo admite la segunda ruta cuando esa cita **incluya el mismo importe numérico exacto** que el campo; una mención fiscal de un anticipo u otro monto no basta. Si la cita contradice el valor, o si solo aparece «IVA 16 %» sin aclarar inclusión, se mantiene **Por confirmar**. La decisión derivada puede consultarse en la ficha de extracción, la columna «IVA del importe» de AD-06 y el detalle por contrato (con fuente y página).
+
+**Ejemplo de control:** importe contractual $1,542,830.55, con «IVA INCLUIDO» en la misma cita: $1,542,830.55 ÷ 1.16 = **$1,330,026.34** sin IVA. Se trata de un cálculo de comparación de importes, no de una validación fiscal integral.
+
+**Compatibilidad de caché:** `contrato-prompt-v5` tiene una nueva versión de prompt y, si el auditor solicita una nueva extracción, se genera una clave de caché distinta. No se reanalizan los PDFs guardados de forma automática ni se reemplazan las respuestas antiguas. Los contratos anteriores con citas útiles pueden aprovechar la nueva detección **sin consumir Gemini**; los que no conservaron evidencia suficiente seguirán necesitando cotejo o una nueva extracción explícitamente solicitada.
+
+
 ## Importante para la auditoría
 
 **Este cálculo NO determina cumplimiento legal integral ni es una observación automática.** El año de firma puede diferir del año del procedimiento o asignación. Hay que comprobar el régimen normativo efectivo, la fuente y origen presupuestario, excepciones de contratación, convenios, participación competitiva y fraccionamiento. Las bases son una fuente de referencia; los enlaces a decretos incluidos en el archivo requieren cotejo contra su texto publicado vigente.

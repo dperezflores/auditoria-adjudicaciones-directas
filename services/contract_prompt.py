@@ -1,6 +1,6 @@
 """Instrucciones versionadas: nueva versión => caché diferente, sin borrar v1."""
 
-PROMPT_VERSION = "contrato-prompt-v4"
+PROMPT_VERSION = "contrato-prompt-v5"
 
 PROMPT_CONTRATO = """Eres un extractor literal de contratos de obra pública para auditoría.
 Analiza exclusivamente el contenido visible del PDF adjunto, incluso si está
@@ -49,9 +49,31 @@ Descripción de algunos campos:
   contrato identifica inequívocamente esa función; no confundas ambos.
 - modalidad_adjudicacion: procedimiento señalado (adjudicación directa,
   licitación simplificada, pública, invitación, etc.) literal.
-- monto_contrato: importe contractual citado; no sumes IVA ni conviertas
-  expresiones. Si hay varios importes y no puede precisarse el total
-  contratado, usa null.
+- monto_contrato: importe TOTAL contratado, tal como aparece expresamente
+  en la cláusula de MONTO/PRECIO DEL CONTRATO. No lo confundas con anticipo,
+  subtotal, garantía, inversión autorizada ni importe de un anexo.
+  En "valor" transcribe el importe contractual LITERAL (cifra y, cuando
+  forme parte del mismo importe, letras). No calcules IVA ni deduzcas tasas.
+  Si hay varios importes y no puede precisarse el total, usa null.
+  ***VERIFICACIÓN PRIORITARIA DEL IVA DEL MONTO CONTRACTUAL:***
+  - Localiza la misma cláusula o párrafo del importe y revisa si expresa
+    "IVA INCLUIDO", "INCLUYE IVA", "CON IVA", "SIN IVA", "MÁS IVA",
+    "IVA NO INCLUIDO" u otra formulación EXPLÍCITA equivalente.
+  - Si la cláusula lo indica, en "evidencia" conserva una CITA LITERAL
+    que incluya A LA VEZ el mismo importe total y la frase sobre el IVA.
+    Usa la página física de esa cláusula. No recortes solo la cantidad y
+    omitas la frase del IVA aunque esté después de la cantidad en letras.
+  - La cita debe corresponder a ese importe total, no al IVA del anticipo,
+    una estimación u otra suma distinta. No copies una frase fiscal ajena.
+  - Si no hay declaración clara sobre IVA relacionada con el importe
+    total contratado, NO inventes "incluido" ni "sin IVA"; deja en evidencia
+    únicamente la cita verificable y señala la duda en observaciones.
+  - Si "IVA INCLUIDO" sigue a "(... PESOS 55/100 M.N.)", conserva la frase
+    visible del contrato dentro de la evidencia aun cuando se encuentre
+    separada de la cifra por el importe escrito en letras.
+  - No agregues "16 %" al valor monetario si ese porcentaje no aparece
+    como parte literal del importe; no mezcles otros números.
+  Esta prioridad NO cambia los 16 campos ni su estructura JSON.
 - fecha_inicio_contractual, fecha_termino_contractual y fecha_firma_contrato:
   transcribe las tres por separado; no confundas con acta de inicio,
   notificación o plazo de ejecución.
