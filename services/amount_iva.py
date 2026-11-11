@@ -25,7 +25,9 @@ class IvaAmountEvidence:
 def _plain(text: str) -> str:
     s = unicodedata.normalize("NFKD", str(text or "").casefold())
     s = "".join(c for c in s if not unicodedata.combining(c))
-    return " ".join(re.sub(r"[^a-z0-9%]+", " ", s).split())
+    normalized = " ".join(re.sub(r"[^a-z0-9%]+", " ", s).split())
+    # «I.V.A.» y «I. V. A.» son grafías frecuentes en los contratos.
+    return re.sub(r"\bi\s+v\s+a\b", "iva", normalized)
 
 
 _INCLUDES = (
