@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from services.award_limits import (
-    Catalog, LimitsError, PILOT_MUNICIPALITY, evaluate, infer_iva,
+    Catalog, LimitsError, PILOT_MUNICIPALITY, evaluate,
     infer_regime, money, read_drive_catalog, year_from_date,
 )
 from services.contract_portfolio import read_contract_portfolio
@@ -188,13 +188,12 @@ def render_award_tests() -> None:
             "Su grupo A/B/C se obtiene del catálogo en el año seleccionado "
             "cuando el régimen es municipal."
         )
-        raw_amount = values.get("monto_contrato","")
         iva_status = identify_record_iva(record)
         iva_detected = iva_status.basis
         iva_options = ["Por confirmar", "Con IVA (16%)", "Sin IVA"]
         iva = st.selectbox(
             "Tratamiento del monto extraído", iva_options,
-            index=iva_options.index(iva_detected), key=f"limits_iva_{record.documento_id}",
+            index=iva_options.index(iva_detected), key=f"limits_iva_evidencia_{record.cache_key}",
             help="Los umbrales del XLSX están sin IVA; confirma este dato con el contrato.",
         )
     with right:
