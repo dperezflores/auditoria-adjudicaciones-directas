@@ -12,6 +12,7 @@ from services.drive_service import is_configured
 from services.sheets_service import storage_configured
 from ui.expedientes import render_expedientes
 from ui.resultados import render_results
+from ui.pruebas_adjudicacion import render_award_tests
 
 st.set_page_config(
     page_title="AuditorIA · Expedientes de obra",
@@ -86,24 +87,7 @@ elif page == "Resultados":
     else:
         render_results()
 else:
-    st.title("Pruebas de adjudicación directa")
-    st.caption("El motor de pruebas normativas se incorporará a esta vista.")
-    st.info(
-        "La identificación documental se realiza por nombre y ya está "
-        "disponibles los extractores PUC-v1, DICTAMEN_AD-v1, NOTIFICACION_AD-v1 y ORDEN_AD-v1 en Expedientes. "
-        "Los demás extractores se activarán por etapas. Las pruebas "
-        "de capital contable, especialidad, vigencia "
-        "del PUC, responsable técnico y secuencia de fechas requieren reglas "
-        "y evidencias específicas que implementaremos posteriormente."
-    )
-    st.table({
-        "Prueba": [
-            "Capital contable", "Especialidad del contratista",
-            "Vigencia del PUC", "Responsable técnico",
-            "Dictamen, notificación y firma del contrato",
-        ],
-        "Estado": ["Por implementar"] * 5,
-    })
+    render_award_tests()
 
 st.divider()
 st.caption(
