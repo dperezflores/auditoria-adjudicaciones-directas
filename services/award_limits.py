@@ -11,7 +11,7 @@ from typing import Any
 from openpyxl import load_workbook
 from services.contract_display import short_date, normalize_award_method
 from services.contract_portfolio import parse_amount
-from services.amount_iva import identify_contract_amount_iva
+from services.amount_iva import identify_contract_amount_iva, identify_record_iva
 from services.drive_service import _list_children, validate_id, FOLDER_MIME, XLSX_MIME
 
 FILENAME = "ADJUDICACION_LIM_2021_2026.xlsx"
@@ -245,15 +245,9 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     foreign_currency = bool(re.search(
         r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", raw, re.IGNORECASE,
     ))
-    # La extracción v2 ya conserva página y evidencia de monto_contrato.
-    # Un «IVA INCLUIDO» ligado a ese importe permite clasificar incluso si
-    # Gemini dejó únicamente la cantidad en monto_contrato.valor.
-    amount_evidence = record.evidence.get("monto_contrato", {}) if fields else {}
-    quote = (
-        str(amount_evidence.get("evidencia") or "")
-        if isinstance(amount_evidence, dict) else ""
-    )
-    iva_detection = identify_contract_amount_iva(raw, evidence=quote)
+    # La extracción v2 ya conserva página y evidencia del monto.
+    # Reconocer el tratamiento fiscal sin alterar los textos originales.
+    iva_detection = identify_record_iva(record)
     inferred_iva = iva_detection.basis
     iva = iva or inferred_iva
     net = None
