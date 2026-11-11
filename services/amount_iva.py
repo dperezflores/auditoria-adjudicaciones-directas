@@ -109,3 +109,22 @@ def identify_contract_amount_iva(
             evidence, page,
         )
     return IvaAmountEvidence("Por confirmar", "No acreditado", "", None)
+
+
+
+def identify_record_iva(record: object) -> IvaAmountEvidence:
+    """Acceso único a los campos ya guardados de contrato-v2; sin llamadas externas."""
+    fields = getattr(record, "full_values", None) or {}
+    evidence = getattr(record, "evidence", None) or {}
+    literal = str(fields.get("monto_contrato") or "")
+    detail = evidence.get("monto_contrato") or {}
+    if not isinstance(detail, dict):
+        detail = {}
+    page = detail.get("pagina")
+    if not isinstance(page, int) or page <= 0:
+        page = None
+    return identify_contract_amount_iva(
+        literal,
+        evidence=str(detail.get("evidencia") or ""),
+        page=page,
+    )
