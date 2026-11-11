@@ -19,6 +19,7 @@ from services.catalogo_store import import_or_reuse_catalogo, load_catalog_rows
 import json
 from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
+from services.amount_iva import identify_contract_amount_iva
 from services.contract_v2 import (
     CONTRACT_SCHEMA_V2, ContractExtractionV2, FIELD_LABELS_V2,
     classify_cited_regime,
@@ -144,6 +145,16 @@ def _summarize_saved(
                     }
                     for name, label in FIELD_LABELS_V2
                 ]), hide_index=True, use_container_width=True)
+                iva_amount = identify_contract_amount_iva(
+                    result.monto_contrato.valor or "",
+                    evidence=result.monto_contrato.evidencia or "",
+                    page=result.monto_contrato.pagina,
+                )
+                st.caption(
+                    "Tratamiento del IVA del importe contractual: "
+                    + iva_amount.basis + " · " + iva_amount.source
+                    + (f" · Página {iva_amount.page}" if iva_amount.page else "")
+                )
                 if result.personas_participantes:
                     st.markdown("**Personas que participan en el contrato**")
                     st.dataframe(pd.DataFrame([
