@@ -76,6 +76,14 @@ def authorized_technical_role(
     if re.search(r"\b(?:de la contratante|por la contratante|del municipio"
                  r"|por el municipio|representante del municipio)\b", citation):
         return False
+    if not re.search(
+        r"\b(?:contratista|proyectista|empresa|prestador de servicios"
+        r"|proveedor)\b",
+        citation,
+    ):
+        # Aunque conste «responsable técnico», no necesariamente es de
+        # la empresa contratista; no convertirlo en su representante.
+        return False
     return True
 
 
