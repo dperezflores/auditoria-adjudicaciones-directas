@@ -70,6 +70,10 @@ def authorized_technical_role(
         citation,
     ):
         return False
+    # El encabezado TESTIGOS prevalece: no convertir un funcionario que
+    # da fe del acto en el representante técnico de la contratista.
+    if re.search(r"\btestigos?\b", citation):
+        return False
     # Una persona técnica designada por la contratante no es representante
     # técnico de la empresa. Citas de ambas partes en una misma firma
     # son ambiguas y se remiten a revisión.
@@ -87,6 +91,50 @@ def authorized_technical_role(
     return True
 
 
+def participant_role_conflicts_with_technical(
+    name: str | None, participants: object,
+) -> bool:
+    """Cruce con los firmantes: el testigo o funcionario municipal no es
+    el representante técnico de la empresa por el mero hecho de firmar.
+    """
+    target = _person_name(name)
+    if not target or not isinstance(participants, (list, tuple)):
+        return False
+    for row in participants:
+        if isinstance(row, dict):
+            participant = row
+        else:
+            participant = {
+                "nombre": getattr(row, "nombre", ""),
+                "cargo_o_caracter": getattr(row, "cargo_o_caracter", ""),
+                "representacion": getattr(row, "representacion", ""),
+                "evidencia": getattr(row, "evidencia", ""),
+            }
+        if _person_name(participant.get("nombre")) != target:
+            continue
+        role = fold(
+            str(participant.get("cargo_o_caracter") or "") + " "
+            + str(participant.get("evidencia") or "")
+        )
+        represented = fold(participant.get("representacion"))
+        if re.search(r"\btestigos?\b", role):
+            return True
+        # La dirección municipal no es la empresa contratista.
+        municipal_role = re.search(
+            r"\b(?:director(?:a)? de planeacion y proyectos"
+            r"|direccion de planeacion y proyectos"
+            r"|director(?:a)? general de obra publica"
+            r"|director(?:a)? de administracion y control financiero"
+            r"|supervisor(?:a)? de la direccion de planeacion)\b",
+            role,
+        )
+        if municipal_role and not re.search(
+            r"\b(?:contratista|proyectista|empresa)\b", represented,
+        ):
+            return True
+    return False
+
+
 def authorized_legal_role(name: str | None, evidence: str | None) -> bool:
     """No basta con aparecer como firmante en la última página."""
     citation = fold(evidence)
@@ -94,7 +142,8 @@ def authorized_legal_role(name: str | None, evidence: str | None) -> bool:
         return False
     return bool(re.search(
         r"\b(?:representante legal|apoderad[oa] legal|apoderad[oa] general"
-        r"|en representacion de|representante de la empresa)\b",
+        r"|en representacion de|representante de la empresa"
+        r"|presidente (?:del |de )?consejo de administracion)\b",
         citation,
     ))
 
@@ -186,6 +235,11 @@ def record_representation_fields(record: object) -> tuple[str, str]:
     elif legal and not authorized_legal_role(legal, legal_quote):
         legal = ""
 
-    if technical and not authorized_technical_role(technical, technical_quote):
+    if technical and (
+        not authorized_technical_role(technical, technical_quote)
+        or participant_role_conflicts_with_technical(
+            technical, getattr(record, "participants", ()),
+        )
+    ):
         technical = ""
     return legal, technical
