@@ -149,6 +149,18 @@ class ContractRolesV6Tests(unittest.TestCase):
         ))
         self.assertIsNone(result.representante_tecnico.valor)
 
+    def test_role_named_but_not_linked_to_contractor_requires_review(self):
+        tech = "ING. LUIS RAMÍREZ NAVARRO"
+        self.assertFalse(authorized_technical_role(
+            tech, f"{tech}, RESPONSABLE TÉCNICO DE LA OBRA."
+        ))
+        result = parse_contract_v2(payload(
+            representante_tecnico=field(
+                tech, f"{tech}, RESPONSABLE TÉCNICO DE LA OBRA."
+            )
+        ))
+        self.assertIsNone(result.representante_tecnico.valor)
+
     def test_missing_technical_role_remains_null(self):
         result = parse_contract_v2(payload())
         self.assertIsNone(result.representante_tecnico.valor)
