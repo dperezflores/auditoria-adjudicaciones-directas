@@ -23,7 +23,7 @@ from services.document_export import (
 )
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
-from services.contract_role_rules import record_representation_fields, suggested_display_type
+from services.contract_role_rules import record_representation_fields, suggested_display_type, _person_name, fold
 from ui.document_crosscheck import render_document_crosscheck
 
 
@@ -168,10 +168,27 @@ def _render_details(record: ContractRecord) -> None:
         if record.full_values is None:
             st.info("La plantilla anterior no conservaba la lista estructurada de participantes.")
         elif record.participants:
+            st.caption(
+                "La lista incluye testigos y servidores públicos; firmar "
+                "el contrato no acredita representación técnica de la empresa."
+            )
+            _, accredited_technical = record_representation_fields(record)
             st.dataframe(pd.DataFrame([
                 {
                     "Nombre (literal)": row.get("nombre") or "",
                     "Cargo o carácter (literal)": row.get("cargo_o_caracter") or "No localizado",
+                    "Representación técnica de la contratista": (
+                        "Acreditada" if (
+                            accredited_technical
+                            and _person_name(row.get("nombre"))
+                            == _person_name(accredited_technical)
+                        ) else "No acreditada"
+                    ),
+                    "Carácter de testigo": (
+                        "Testigo (cita explícita)" if "testigos" in fold(
+                            row.get("evidencia") or ""
+                        ) else "No consta en la cita guardada"
+                    ),
                     "Representa a": row.get("representacion") or "No localizado",
                     "Página": row.get("pagina") if row.get("pagina") is not None else "—",
                     "Evidencia": row.get("evidencia") or "Sin evidencia",
