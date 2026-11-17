@@ -168,7 +168,6 @@ class ContractPdfV7Tests(unittest.TestCase):
         screen=Path(__file__).resolve().parents[1].joinpath("ui","expedientes.py").read_text(encoding="utf-8")
         self.assertIn("_render_contract_upgrade(",screen)
         self.assertIn("Confirmo que deseo volver a analizar",screen)
-        self.assertIn("on_click",screen) if False else None
         self.assertIn("disabled=not accepted",screen)
         self.assertIn('st.session_state.pop("results_portfolio", None)',screen)
         self.assertIn("st.session_state[\"ex_last_run\"] = _analyze(obra, [doc], model)",screen)
