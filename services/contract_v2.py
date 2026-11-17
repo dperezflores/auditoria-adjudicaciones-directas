@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from services.contract_role_rules import (
     NO_APLICA_FISICA, _person_name, authorized_technical_role,
     authorized_legal_role, is_persona_fisica, literal_unit_price_basis, fold,
+    participant_role_conflicts_with_technical,
 )
 
 
@@ -274,8 +275,9 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
         )
 
     technical = seen["representante_tecnico"]
-    if technical.valor and not authorized_technical_role(
-        technical.valor, technical.evidencia
+    if technical.valor and (
+        not authorized_technical_role(technical.valor, technical.evidencia)
+        or participant_role_conflicts_with_technical(technical.valor, persons)
     ):
         seen["representante_tecnico"] = LiteralEvidence(valor=None)
         issues.append(
