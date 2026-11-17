@@ -247,7 +247,7 @@ class ContractRolesV6Tests(unittest.TestCase):
         )
 
     def test_prompt_version_and_full_contract_schema_unchanged(self):
-        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v6")
+        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v7")
         self.assertEqual(CONTRACT_SCHEMA_V2, "contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS), 16)
         self.assertEqual(len(CONTRACT_V2_HEADERS), 23)

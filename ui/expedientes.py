@@ -20,6 +20,8 @@ import json
 from services.document_classifier import XLSX_MIME, guess_from_name, code_from_filename
 from services.contract_schema import ExtraccionContrato
 from services.amount_iva import identify_contract_amount_iva
+from services.contract_upgrade import eligible_contract_upgrade
+from services.contract_prompt import PROMPT_VERSION
 from services.contract_v2 import (
     CONTRACT_SCHEMA_V2, ContractExtractionV2, FIELD_LABELS_V2,
     classify_cited_regime,
@@ -612,6 +614,63 @@ def _analyze(
     return log
 
 
+def _render_contract_upgrade(
+    doc: DocumentRecord, obra: WorkRecord,
+    tables: dict[str, list[dict[str, str]]],
+) -> None:
+    """Permite actualizar expresamente un contrato v2 anterior sin borrarlo.
+
+    En el primer clic solo se confirma intención. Solo la segunda acción
+    solicita la descarga verificada de Drive y el extractor actual a Gemini.
+    """
+    registered = next(
+        (r for r in tables["Documentos"] if r["documento_id"] == doc.id), None,
+    )
+    saved = next(
+        (r for r in tables["Extracciones"]
+         if registered and r["cache_key"] == registered["resultado_id"]), None,
+    )
+    allowed, note = eligible_contract_upgrade(
+        doc, obra.id, registered, saved, tables["Extracciones"],
+    )
+    if not allowed:
+        return
+    with st.expander("Actualizar este contrato con el extractor mejorado"):
+        st.info(
+            f"{note} El análisis actual se conservará en el historial. "
+            "La nueva versión incluye revisión de la modalidad económica "
+            "(precios unitarios/precio alzado) y evita clasificar testigos "
+            "como representantes técnicos."
+        )
+        st.warning(
+            "Esta acción realizará una nueva solicitud a Gemini y puede "
+            "generar consumo de API. No borra los análisis anteriores. "
+            "Si la nueva extracción no se confirma, revisa los registros "
+            "antes de intentar nuevamente."
+        )
+        accepted = st.checkbox(
+            "Confirmo que deseo volver a analizar únicamente este contrato "
+            "y entiendo el posible consumo de Gemini.",
+            key=f"ex_upgrade_confirm_{doc.id}",
+        )
+        gemini = st.secrets.get("gemini", {})
+        model = gemini.get("model") or DEFAULT_MODEL
+        if st.button(
+            f"Actualizar análisis de CONTRATO ({PROMPT_VERSION})",
+            key=f"ex_upgrade_button_{doc.id}",
+            disabled=not accepted or not gemini.get("api_key"),
+            type="primary",
+        ):
+            # _analyze comprueba Drive/MD5, utiliza el lock de Sheets y
+            # conserva extracciones anteriores mediante cache_key distinta.
+            # Este botón NO usa la eliminación ni modifica el PDF original.
+            st.session_state["ex_last_run"] = _analyze(obra, [doc], model)
+            st.session_state["ex_last_run_obra_id"] = obra.id
+            st.session_state.pop("results_portfolio", None)
+            st.session_state.pop("award_limits_contracts", None)
+            st.rerun()
+
+
 def _render_delete_analysis(
     doc: DocumentRecord, obra: WorkRecord,
     tables: dict[str, list[dict[str, str]]],
@@ -969,6 +1028,9 @@ def render_expedientes(authenticated: bool) -> None:
     ):
         st.session_state["ex_last_run"] = _analyze(obra, batch, model)
         st.session_state["ex_last_run_obra_id"] = obra.id
+        # El dashboard y AD-06 deben leer los nuevos datos de Sheets.
+        st.session_state.pop("results_portfolio", None)
+        st.session_state.pop("award_limits_contracts", None)
         st.rerun()
 
     if (
@@ -993,6 +1055,9 @@ def render_expedientes(authenticated: bool) -> None:
     current_state = file_states(inventory, st.session_state["ex_status_tables"])[preview.id]
     st.write(f"**Estado:** {current_state.label} · {current_state.detail}")
     _summarize_saved(preview, st.session_state["ex_status_tables"], current_state)
+    _render_contract_upgrade(
+        preview, obra, st.session_state["ex_status_tables"],
+    )
     _render_delete_analysis(
         preview, obra, st.session_state["ex_status_tables"],
     )

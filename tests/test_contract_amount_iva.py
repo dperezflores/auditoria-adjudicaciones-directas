@@ -135,7 +135,7 @@ class ContractAmountIvaTests(unittest.TestCase):
 
     def test_prompt_version_and_no_extra_column_or_schema(self):
         from services.contract_v2 import CONTRACT_SCHEMA_V2, CONTRACT_V2_FIELDS
-        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v6")
+        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v7")
         self.assertEqual(CONTRACT_SCHEMA_V2,"contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS),16)
         self.assertIn("monto_contrato",PROMPT_CONTRATO)

@@ -1,6 +1,6 @@
 """Instrucciones versionadas: nueva versión => caché diferente, sin borrar v1."""
 
-PROMPT_VERSION = "contrato-prompt-v6"
+PROMPT_VERSION = "contrato-prompt-v7"
 
 PROMPT_CONTRATO = """Eres un extractor literal de contratos de obra pública para auditoría.
 Analiza exclusivamente el contenido visible del PDF adjunto, incluso si está
@@ -65,6 +65,21 @@ Descripción de algunos campos:
   alzado y unitarios, señala ambigüedad; no elijas arbitrariamente.
   No devuelvas null si el documento SÍ incluye una frase contractual
   explícita que permita determinar la modalidad económica.
+  DISTINCIÓN OBLIGATORIA EN CONTRATOS DE SERVICIOS:
+  El encabezado "CONTRATO DE SERVICIOS RELACIONADOS CON LA OBRA PÚBLICA /
+  PROYECTO EJECUTIVO" identifica la NATURALEZA U OBJETO, pero no responde
+  la modalidad económica. NUNCA lo uses como único valor de "tipo_contrato"
+  si el propio contrato tiene cláusulas de precios unitarios.
+  En concreto, si la cláusula TERCERA. MONTO dice "con base en los precios
+  unitarios y volúmenes autorizados" y/o la QUINTA. BASE DE PAGO
+  establece pagos basados en precios unitarios, entonces el resultado
+  económico es PRECIOS UNITARIOS, no "proyecto ejecutivo". El campo
+  "tipo_contrato.valor" debe contener la FRASE LITERAL de esos precios
+  unitarios y la "evidencia" debe demostrar esa frase y su página.
+  Si una frase muestra el tipo de servicio y otra muestra la modalidad
+  de pago, conserva la SEGUNDA en tipo_contrato y el objeto en obra_servicio.
+  Si no existe mención explícita a precios unitarios ni precio alzado,
+  no infieras la modalidad por el servicio ni el título del contrato.
 - registro_puc: número de registro de padrón de contratistas si aparece.
 - contratista: identifica a LA PERSONA O EMPRESA A QUIEN SE ADJUDICA
   Y QUE CONTRATA. Si se identifica "ARQ. NOMBRE APELLIDOS" o
@@ -122,6 +137,14 @@ Descripción de algunos campos:
   - Si "IVA INCLUIDO" sigue a "(... PESOS 55/100 M.N.)", conserva la frase
     visible del contrato dentro de la evidencia aun cuando se encuentre
     separada de la cifra por el importe escrito en letras.
+  - MUY IMPORTANTE: no cortes el párrafo inmediatamente después de
+    "IVA INCLUIDO". Si continúa "cantidad que se fijó como importe total,
+    con base en los precios unitarios y volúmenes autorizados", conserva
+    también el texto POSTERIOR al IVA y hasta esa referencia. Esa frase
+    puede acreditar el tipo de contrato en otra prueba sin gastar IA.
+  - Como evidencia de tipo_contrato, también puede utilizarse la cláusula
+    QUINTA. BASE DE PAGO cuando indique expresamente que las partes
+    pagarán con base en precios unitarios.
   - No agregues "16 %" al valor monetario si ese porcentaje no aparece
     como parte literal del importe; no mezcles otros números.
   Esta prioridad NO cambia los 16 campos ni su estructura JSON.
@@ -152,6 +175,21 @@ campos "representante_legal" ni "representante_tecnico". Una persona puede
 participar o firmar sin ocupar esos cargos. Si solo está en firmas, conserva
 allí su nombre y carácter literal, pero NO la promociones automáticamente
 a representante técnico o legal.
+  ATENCIÓN A LA PÁGINA DE FIRMAS Y TESTIGOS:
+  - Examina los encabezados inmediatamente superiores a cada rúbrica:
+    "EL CONTRATANTE", "EL CONTRATISTA"/"EL PROYECTISTA" y "TESTIGOS".
+  - Si un ING. aparece bajo "TESTIGOS" con cargo municipal de "DIRECTOR
+    DE PLANEACIÓN Y PROYECTOS", es TESTIGO / SERVIDOR PÚBLICO, no
+    representante técnico de la empresa proyectista/contratista.
+  - Conserva en la evidencia de ese participante el encabezado "TESTIGOS"
+    que aparece sobre su firma, además de nombre y cargo. No inventes
+    la palabra "testigo" cuando no se vea ese encabezado.
+  - Una designación de un ARQ. para la SUPERVISIÓN del contrato por parte
+    de la Dirección de Planeación y Proyectos tampoco acredita
+    representación técnica del contratista.
+  - Si no hay representante técnico DESIGNADO POR LA EMPRESA,
+    representante_tecnico.valor = null; NO copies nombres del grupo
+    de firmas o de la supervisión administrativa.
 No inventes cargos ni incluyas personas ajenas que solo se citan como
 antecedentes sin participar en el contrato. No dupliques la misma persona
 si vuelve a aparecer como firmante. Si no identificas personas, lista vacía.
