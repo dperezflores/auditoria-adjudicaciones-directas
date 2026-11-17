@@ -12,6 +12,10 @@ import re
 import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from services.contract_role_rules import (
+    NO_APLICA_FISICA, _person_name, authorized_technical_role,
+    authorized_legal_role, is_persona_fisica, literal_unit_price_basis,
+)
 
 
 CONTRACT_SCHEMA_V2 = "contrato-v2"
@@ -208,12 +212,73 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
     missing = [name for name in CONTRACT_V2_FIELDS if name not in seen]
     for name in missing:
         seen[name] = LiteralEvidence(valor=None)
+
+    issues = observations + [
+        f"Campo omitido por el modelo: {name}" for name in missing
+    ]
+
+    # Respaldo determinista si el modelo ignoró la cláusula TERCERA aunque
+    # haya citado explícitamente que se paga con precios unitarios y volúmenes.
+    kind, amount = seen["tipo_contrato"], seen["monto_contrato"]
+    if kind.valor is None:
+        cited_phrase = literal_unit_price_basis(
+            amount.valor, amount.evidencia
+        )
+        if cited_phrase and amount.pagina is not None:
+            seen["tipo_contrato"] = LiteralEvidence(
+                valor=cited_phrase,
+                pagina=amount.pagina,
+                evidencia=amount.evidencia,
+            )
+            issues.append(
+                "Tipo de contrato: frase literal recuperada de la cláusula "
+                "de monto; verificar que corresponda a la modalidad económica."
+            )
+
+    contractor, legal = seen["contratista"], seen["representante_legal"]
+    physically = is_persona_fisica(
+        contractor.valor, contractor.evidencia
+    )
+    if physically and (
+        legal.valor is None
+        or legal.valor == NO_APLICA_FISICA
+        or _person_name(legal.valor) == _person_name(contractor.valor)
+    ):
+        # Solo el marcador es derivado. Su cita y página son las declaraciones
+        # literales del contratista; la clasificación no se presenta como cita.
+        seen["representante_legal"] = LiteralEvidence(
+            valor=NO_APLICA_FISICA,
+            pagina=contractor.pagina,
+            evidencia=contractor.evidencia,
+        )
+        issues.append(
+            "Representante legal: clasificación derivada de comparecencia "
+            "por derecho propio; no es transcripción literal."
+        )
+    elif legal.valor and (
+        legal.valor == NO_APLICA_FISICA
+        or not authorized_legal_role(legal.valor, legal.evidencia)
+    ):
+        seen["representante_legal"] = LiteralEvidence(valor=None)
+        issues.append(
+            "Representante legal: el nombre o marcador carece de evidencia "
+            "inequívoca de representación; requiere cotejo documental."
+        )
+
+    technical = seen["representante_tecnico"]
+    if technical.valor and not authorized_technical_role(
+        technical.valor, technical.evidencia
+    ):
+        seen["representante_tecnico"] = LiteralEvidence(valor=None)
+        issues.append(
+            "Representante técnico: se omitió un firmante sin designación "
+            "técnica expresa y vinculada al contratista."
+        )
+
     return ContractExtractionV2.model_validate({
         **seen,
         "personas_participantes": persons,
-        "observaciones": observations + [
-            f"Campo omitido por el modelo: {name}" for name in missing
-        ],
+        "observaciones": issues,
     })
 
 
