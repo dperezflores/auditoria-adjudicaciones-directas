@@ -14,7 +14,7 @@ import unicodedata
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from services.contract_role_rules import (
     NO_APLICA_FISICA, _person_name, authorized_technical_role,
-    authorized_legal_role, is_persona_fisica, literal_unit_price_basis,
+    authorized_legal_role, is_persona_fisica, literal_unit_price_basis, fold,
 )
 
 
@@ -220,7 +220,10 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
     # Respaldo determinista si el modelo ignoró la cláusula TERCERA aunque
     # haya citado explícitamente que se paga con precios unitarios y volúmenes.
     kind, amount = seen["tipo_contrato"], seen["monto_contrato"]
-    if kind.valor is None:
+    if not re.search(
+        r"\b(?:precios? unitarios?|precio alzado|mixto)\b",
+        fold(kind.valor),
+    ):
         cited_phrase = literal_unit_price_basis(
             amount.valor, amount.evidencia
         )
@@ -236,8 +239,9 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
             )
 
     contractor, legal = seen["contratista"], seen["representante_legal"]
-    physically = is_persona_fisica(
-        contractor.valor, contractor.evidencia
+    physically = (
+        is_persona_fisica(contractor.valor, contractor.evidencia)
+        or is_persona_fisica(contractor.valor, legal.evidencia)
     )
     if physically and (
         legal.valor is None
@@ -246,10 +250,14 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
     ):
         # Solo el marcador es derivado. Su cita y página son las declaraciones
         # literales del contratista; la clasificación no se presenta como cita.
+        witness = (
+            contractor if is_persona_fisica(contractor.valor, contractor.evidencia)
+            else legal
+        )
         seen["representante_legal"] = LiteralEvidence(
             valor=NO_APLICA_FISICA,
-            pagina=contractor.pagina,
-            evidencia=contractor.evidencia,
+            pagina=witness.pagina,
+            evidencia=witness.evidencia,
         )
         issues.append(
             "Representante legal: clasificación derivada de comparecencia "
