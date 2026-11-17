@@ -132,6 +132,8 @@ def literal_unit_price_basis(
         context,
     ):
         return ""
+    if re.search(r"\b(?:precio alzado|precios alzados|precio global)\b", context):
+        return ""
     phrase = fold(match.group(0))
     if not re.search(r"\bprecios? unitarios?\b", phrase):
         return ""
@@ -168,7 +170,10 @@ def record_representation_fields(record: object) -> tuple[str, str]:
     legal_quote = (evidence.get("representante_legal") or {}).get("evidencia") or ""
     technical_quote = (evidence.get("representante_tecnico") or {}).get("evidencia") or ""
 
-    physically = is_persona_fisica(contractor, contractor_quote)
+    physically = (
+        is_persona_fisica(contractor, contractor_quote)
+        or is_persona_fisica(contractor, legal_quote)
+    )
     if physically and (
         not legal
         or fold(legal) == fold(NO_APLICA_FISICA)
