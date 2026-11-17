@@ -339,6 +339,20 @@ def _contract_v2_fixture():
                 "pagina": 1,
                 "evidencia": literal[item["campo"]],
             })
+    # Dos designaciones expresas: un nombre en la hoja de firmas no
+    # acredita por sí solo el carácter legal ni el técnico de la empresa.
+    next(x for x in fields if x["campo"] == "representante_legal")[
+        "evidencia"
+    ] = (
+        "ARQ. JOSE LUIS, S.A., REPRESENTANTE LEGAL DE "
+        "CONSTRUCTORA DEL BAJÍO, S.A. DE C.V."
+    )
+    next(x for x in fields if x["campo"] == "representante_tecnico")[
+        "evidencia"
+    ] = (
+        "ING. CÉSAR RAMÍREZ, REPRESENTANTE TÉCNICO "
+        "DESIGNADO POR LA CONTRATISTA."
+    )
     result = parse_contract_v2({
         "campos": fields,
         "personas": [{

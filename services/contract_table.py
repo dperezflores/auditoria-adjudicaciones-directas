@@ -8,6 +8,9 @@ from typing import Any, Sequence
 
 from services.contract_portfolio import ContractRecord
 from services.contract_v2 import FIELD_LABELS_V2
+from services.contract_role_rules import (
+    record_representation_fields, suggested_display_type,
+)
 from services.contract_display import (
     format_contract_amount, normalize_award_method, normalize_contract_type, short_date,
 )
@@ -58,12 +61,25 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str
             }
         )
         row: dict[str, str] = {}
+        legal_view, technical_view = record_representation_fields(record)
+        amount_evidence = (
+            (record.evidence.get("monto_contrato") or {}).get("evidencia") or ""
+            if source is not None else ""
+        )
         for key, label in FIELD_LABELS_V2:
             literal = values[key]
             if key == "monto_contrato":
                 row[label] = format_contract_amount(literal, record.currency)
             elif key == "tipo_contrato":
-                row[label] = normalize_contract_type(literal)
+                row[label] = (
+                    suggested_display_type(
+                        literal, values.get("monto_contrato") or "", amount_evidence,
+                    ) if source is not None else normalize_contract_type(literal)
+                )
+            elif key == "representante_legal" and source is not None:
+                row[label] = legal_view or "—"
+            elif key == "representante_tecnico" and source is not None:
+                row[label] = technical_view or "—"
             elif key == "modalidad_adjudicacion":
                 row[label] = normalize_award_method(literal)
             elif key in ("fecha_firma_contrato", "fecha_inicio_contractual",
