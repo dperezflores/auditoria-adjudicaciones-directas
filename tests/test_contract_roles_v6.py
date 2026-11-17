@@ -69,6 +69,17 @@ class ContractRolesV6Tests(unittest.TestCase):
         ))
         self.assertEqual(result.representante_legal.valor, NO_APLICA_FISICA)
 
+    def test_persona_fisica_accredited_in_legal_field_evidence(self):
+        data = payload(
+            contratista=field(NAME, f"EL PROYECTISTA: {NAME}"),
+            representante_legal=field(NO_APLICA_FISICA, QUOTE_FISICA, 2),
+        )
+        result = parse_contract_v2(data)
+        self.assertEqual(result.contratista.valor, NAME)
+        self.assertEqual(result.representante_legal.valor, NO_APLICA_FISICA)
+        self.assertEqual(result.representante_legal.pagina, 2)
+        self.assertEqual(result.representante_legal.evidencia, QUOTE_FISICA)
+
     def test_rfc_and_professional_title_do_not_prove_persona_fisica(self):
         q = f"{NAME} suscribe el contrato."
         self.assertFalse(is_persona_fisica(NAME, q))
@@ -176,6 +187,14 @@ class ContractRolesV6Tests(unittest.TestCase):
         self.assertEqual(result.tipo_contrato.evidencia, QUOTE_PU)
         self.assertEqual(result.tipo_contrato.pagina, 4)
         self.assertTrue(any("frase literal recuperada" in x for x in result.observaciones))
+
+    def test_price_basis_replaces_tiempo_determinado_only(self):
+        result = parse_contract_v2(payload(
+            tipo_contrato=field("TIEMPO DETERMINADO", "TIEMPO DETERMINADO"),
+            monto_contrato=field("$156,243.81", QUOTE_PU, page=4),
+        ))
+        self.assertIn("precios unitarios", result.tipo_contrato.valor.lower())
+        self.assertEqual(result.tipo_contrato.evidencia, QUOTE_PU)
 
     def test_pricing_in_unrelated_quote_does_not_fill_type(self):
         result = parse_contract_v2(payload(
