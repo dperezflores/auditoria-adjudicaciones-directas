@@ -23,6 +23,7 @@ from services.document_export import (
 )
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
+from services.contract_role_rules import record_representation_fields, suggested_display_type
 from ui.document_crosscheck import render_document_crosscheck
 
 
@@ -136,6 +137,26 @@ def _render_details(record: ContractRecord) -> None:
                     for field, label in FIELD_LABELS
                 ]), hide_index=True, use_container_width=True,
             )
+        if record.full_values is not None:
+            legal_view, technical_view = record_representation_fields(record)
+            amount_quote = (
+                (record.evidence.get("monto_contrato") or {}).get("evidencia") or ""
+            )
+            type_view = suggested_display_type(
+                record.full_values.get("tipo_contrato") or "",
+                record.full_values.get("monto_contrato") or "",
+                amount_quote,
+            )
+            if (
+                type_view != "—" or legal_view or technical_view
+            ):
+                st.caption(
+                    "Clasificación para el listado, derivada de citas verificables "
+                    "(no sustituye los literales almacenados): "
+                    f"tipo de contrato: {type_view}; "
+                    f"representante legal: {legal_view or 'No acreditado'}; "
+                    f"representante técnico: {technical_view or 'No acreditado'}."
+                )
         if record.missing_fields:
             labels = dict(FIELD_LABELS_V2) if record.full_values else dict(FIELD_LABELS)
             st.caption(
