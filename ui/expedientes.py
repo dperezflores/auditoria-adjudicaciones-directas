@@ -743,7 +743,142 @@ def _render_delete_analysis(
                 )
 
 
-def render_expedientes(authenticated: bool) -> None:
+def _choose_folder(folder_id: str) -> None:
+    """Cambiar de obra desde el árbol lateral, sin ejecutar extractores."""
+    st.session_state["ex_selected_folder"] = folder_id
+
+
+def _render_sidebar_folders(
+    inventory: DriveInventory,
+    folders: dict,
+    states: dict[str, FileStatus],
+    *,
+    folder_container=None,
+) -> str:
+    """Explorador lateral desplegable; la extracción permanece arriba a la derecha.
+
+    La selección usa el mismo ID de obra y la misma clave de sesión anterior.
+    Buscar, abrir carpetas y consultar estados no consumen Gemini.
+    """
+    ids = [work.id for work in inventory.works]
+    label_by_id = {work.id: work.name for work in inventory.works}
+    work_by_id = {work.id: work for work in inventory.works}
+    if st.session_state.get("ex_selected_folder") not in work_by_id:
+        st.session_state["ex_selected_folder"] = ids[0]
+
+    panel = folder_container if folder_container is not None else st.sidebar
+    with panel:
+        st.markdown("### 📁 Carpetas de obra")
+        st.caption(f"{len(ids)} obras detectadas en Google Drive")
+        obra_id = st.selectbox(
+            "Carpeta a trabajar",
+            ids,
+            format_func=lambda item: label_by_id[item],
+            key="ex_selected_folder",
+            help="Escribe parte del nombre para localizar una obra. "
+                 "La selección cambia el expediente de la zona principal.",
+        )
+        selected_work = work_by_id[obra_id]
+        selected_state = folders[obra_id]
+        st.caption(
+            f"**{selected_state.label}** · "
+            f"{selected_state.complete}/{selected_state.total} documentos procesados"
+        )
+
+        with st.expander("Buscar y explorar obras", expanded=True):
+            search = st.text_input(
+                "Buscar carpeta o PDF",
+                placeholder="Nombre de obra, número o archivo...",
+                key="ex_search",
+            ).casefold().strip()
+            filter_status = st.selectbox(
+                "Filtrar estado",
+                ["Todos", "Analizada", "Parcial", "Pendiente", "Revisar error", "Sin PDF"],
+                key="ex_folder_filter",
+            )
+            visible = [
+                work for work in inventory.works
+                if (
+                    not search or search in work.name.casefold()
+                    or any(
+                        search in file.name.casefold()
+                        for file in (*work.pdfs, *work.other_files)
+                    )
+                )
+                and (
+                    filter_status == "Todos"
+                    or folders[work.id].label == filter_status
+                )
+            ]
+            st.caption(f"{len(visible)} carpeta(s) coinciden con el filtro")
+            if not visible:
+                st.info("No hay carpetas que coincidan con el filtro.")
+            else:
+                # Evita apilar cientos de controles en la barra lateral. La
+                # lista se desplaza por separado, sin mover la extracción.
+                with st.container(height=300, border=False):
+                    for work in visible[:60]:
+                        fs = folders[work.id]
+                        selected_icon = "●" if work.id == obra_id else "📁"
+                        st.button(
+                            f"{selected_icon} {work.name}",
+                            key=f"ex_nav_folder_{work.id}",
+                            use_container_width=True,
+                            help=(
+                                f"{fs.label} · "
+                                f"{fs.complete}/{fs.total} documentos procesados"
+                            ),
+                            on_click=_choose_folder,
+                            args=(work.id,),
+                        )
+                        st.caption(
+                            f"{fs.label} · {fs.complete}/{fs.total} procesados"
+                        )
+                if len(visible) > 60:
+                    st.caption(
+                        f"Se muestran 60 de {len(visible)} carpetas. "
+                        "Escribe parte del nombre para acotar la búsqueda; "
+                        "también puedes buscar directamente en «Carpeta a trabajar»."
+                    )
+
+        with st.expander("Documentos de la carpeta seleccionada", expanded=False):
+            work_docs = [
+                *selected_work.pdfs,
+                *(
+                    doc for doc in selected_work.other_files
+                    if code_from_filename(doc.name, doc.mime_type) == "CATALOGO"
+                ),
+            ]
+            if not work_docs:
+                st.caption("Sin documentos compatibles con los extractores.")
+            for doc in work_docs:
+                path_label = (
+                    (doc.relative_path + "/" if doc.relative_path else "")
+                    + doc.name
+                )
+                st.markdown(f"**{path_label}**")
+                st.caption(
+                    f"{guess_from_name(doc.name, doc.mime_type).label} · "
+                    f"{states[doc.id].label} · {doc.modified_time or 'Sin fecha'}"
+                )
+            other_files = [
+                doc for doc in selected_work.other_files if doc not in work_docs
+            ]
+            if other_files:
+                st.markdown("**Otros archivos detectados**")
+                for doc in other_files:
+                    st.caption(
+                        f"{doc.name} · {guess_from_name(doc.name, doc.mime_type).label}"
+                        " · Sin extractor compatible"
+                    )
+            st.caption(
+                "Los tipos se asignan por nombre y extensión. Si un PDF "
+                "aparece como POR_IDENTIFICAR, renómbralo en Drive y sincroniza."
+            )
+    return obra_id
+
+
+def render_expedientes(authenticated: bool, folder_container=None) -> None:
     st.title("Expedientes de obra")
     st.caption(
         "Explorador conectado a Google Drive · Extracción por tipo documental"
@@ -761,24 +896,10 @@ def render_expedientes(authenticated: bool) -> None:
     tables = st.session_state["ex_status_tables"]
     states = file_states(inventory, tables)
     folders = folder_states(inventory, states)
-    pdf_total = inventory.pdf_total
-    catalog_total = sum(
-        code_from_filename(d.name, d.mime_type) == "CATALOGO"
-        for w in inventory.works for d in w.other_files
-    )
-    complete = sum(v.label == "Analizado" for v in states.values())
-    partial = sum(v.label == "Parcial" for v in states.values())
-
     st.caption(
         f"Carpeta raíz: {inventory.root_name} · "
         f"Última sincronización: {st.session_state.get('ex_synced_at', 'Sin fecha')} UTC"
     )
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Carpetas", len(inventory.works))
-    col2.metric("PDF y catálogos registrados", pdf_total + catalog_total)
-    col3.metric("Procesados (IA o Excel)", complete)
-    col4.metric("Pendientes o parciales", pdf_total + catalog_total - complete)
-
     if not inventory.works:
         st.info(
             "No hay carpetas de obra en el directorio autorizado. "
@@ -786,95 +907,24 @@ def render_expedientes(authenticated: bool) -> None:
         )
         return
 
-    st.markdown("### Carpetas de obra")
-    search = st.text_input(
-        "Buscar carpeta o PDF",
-        placeholder="Nombre de la obra, número de contrato, archivo...",
-        key="ex_search",
-    ).casefold().strip()
-    filter_status = st.selectbox(
-        "Filtrar estado", ["Todos", "Analizada", "Parcial", "Pendiente", "Revisar error", "Sin PDF"],
-        key="ex_folder_filter",
+    # La navegación y el inventario ahora viven en la barra lateral,
+    # desplegable de Streamlit. El motor y los IDs de obra no cambian.
+    obra_id = _render_sidebar_folders(
+        inventory, folders, states, folder_container=folder_container,
     )
-    visible = [
-        work for work in inventory.works
-        if (
-            not search or search in work.name.casefold()
-            or any(search in f.name.casefold() for f in (*work.pdfs, *work.other_files))
-        )
-        and (filter_status == "Todos" or folders[work.id].label == filter_status)
-    ]
-    if not visible:
-        st.info("No hay expedientes que coincidan con el filtro.")
-    for work in visible:
-        fs = folders[work.id]
-        with st.expander(
-            f"📁 {work.name}  ·  {fs.label}  ·  {fs.complete}/{fs.total} documentos procesados",
-            expanded=len(visible) == 1,
-        ):
-            docs = [
-                *work.pdfs,
-                *(d for d in work.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
-            ]
-            if not docs:
-                st.caption("Esta carpeta no contiene documentos compatibles con los extractores.")
-                if work.other_files:
-                    st.dataframe(pd.DataFrame([
-                        {
-                            "Archivo": (doc.relative_path + "/" if doc.relative_path else "") + doc.name,
-                            "Formato": doc.mime_type,
-                            "Tipo documental": guess_from_name(doc.name, doc.mime_type).label,
-                            "Estado": "Excel registrado · sin extractor" if doc.mime_type == XLSX_MIME
-                            else "Formato no compatible",
-                        }
-                        for doc in work.other_files
-                    ]), hide_index=True, use_container_width=True)
-                continue
-            st.dataframe(pd.DataFrame([
-                {
-                    "Archivo": (doc.relative_path + "/" if doc.relative_path else "") + doc.name,
-                    "Tipo documental": guess_from_name(doc.name, doc.mime_type).label,
-                    "Estado IA": states[doc.id].label,
-                    "Actualizado": doc.modified_time,
-                }
-                for doc in docs
-            ]), hide_index=True, use_container_width=True)
-            extra_files = [d for d in work.other_files if d not in docs]
-            if extra_files:
-                st.markdown("**Otros documentos detectados**")
-                st.dataframe(pd.DataFrame([
-                    {
-                        "Archivo": (other.relative_path + "/" if other.relative_path else "") + other.name,
-                        "Formato": other.mime_type,
-                        "Tipo documental": guess_from_name(other.name, other.mime_type).label,
-                        "Estado": (
-                            "Excel registrado · extractor pendiente"
-                            if other.mime_type == XLSX_MIME
-                            else "Formato no compatible"
-                        ),
-                    }
-                    for other in extra_files
-                ]), hide_index=True, use_container_width=True)
-            st.caption(
-                "El tipo documental se asigna automáticamente a partir del nombre "
-                "estándar y la extensión, sin comprobar el contenido. "
-                "Si aparece POR_IDENTIFICAR, renombra el archivo y actualiza Drive."
-            )
+    obra = next(work for work in inventory.works if work.id == obra_id)
 
-    st.divider()
     st.markdown("### Extracción documental")
+    st.caption(
+        f"Obra seleccionada: **{obra.name}** · "
+        f"{folders[obra.id].complete}/{folders[obra.id].total} documentos procesados"
+    )
     st.info(
         "Extractores disponibles: **CONTRATO-v2 (16 campos)**, **PUC-v1**, **DICTAMEN_AD-v1**, "
         "**NOTIFICACION_AD-v1**, **ORDEN_AD-v1** y **CATALOGO.xlsx (sin IA)**. "
         "Los PDF se analizan con Gemini solo al pulsar Analizar; el Excel "
         "se lee localmente sin IA y excluye los conceptos fuera de catálogo."
     )
-    ids = [work.id for work in inventory.works]
-    label_by_id = {work.id: work.name for work in inventory.works}
-    obra_id = st.selectbox(
-        "Carpeta a trabajar", ids, format_func=label_by_id.get, key="ex_selected_folder"
-    )
-    obra = next(work for work in inventory.works if work.id == obra_id)
     work_docs = [
         *obra.pdfs,
         *(d for d in obra.other_files if code_from_filename(d.name, d.mime_type) == "CATALOGO"),
