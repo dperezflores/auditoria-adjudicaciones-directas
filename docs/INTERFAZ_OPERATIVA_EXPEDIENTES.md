@@ -1,5 +1,34 @@
 # AuditorIA — Expedientes y análisis documental
 
+## Navegación lateral de carpetas en la app original (noviembre 2026)
+
+**Pantalla: Expedientes.** El selector «Carpeta a trabajar» y el explorador
+de carpetas están en la **barra lateral izquierda de Streamlit**, justo
+debajo de «Navegación». Esta barra puede contraerse y expandirse con el
+control estándar de Streamlit. La pantalla principal comienza directamente
+con **Extracción documental** y la obra actualmente seleccionada; ya
+no dibuja todas las carpetas y sus tablas antes de la extracción.
+
+Para elegir una obra se puede usar el selector buscable por su nombre,
+o abrir «Buscar y explorar obras» para filtrar por texto del nombre, número
+o nombre de archivo y estado (Todos, Analizada, Parcial, Pendiente, Revisar
+error, Sin PDF). El listado filtrado ocupa un **área desplazable** de
+300 px dentro del panel y muestra hasta 60 coincidencias; el selector
+superior permite encontrar cualquier carpeta directamente. El panel
+«Documentos de la carpeta seleccionada» muestra nombres, tipo y estados
+sin cargar PDF ni consumir Gemini.
+
+Se conserva la clave de selección `ex_selected_folder` y los IDs reales de
+Drive. **Cambiar de carpeta no inicia análisis ni modifica resultados.**
+Se mantienen sin cambios los modos Un archivo / Varios archivos /
+Carpeta completa, el tope de 10 documentos por ejecución, las reglas de
+elegibilidad, las lecturas de datos guardados y las acciones explícitas
+de actualizar contratos o eliminar análisis.
+
+Este ajuste modifica únicamente la **app original** (`main`) y no la
+**app de pruebas** (`ui/fase1-explorador`).
+
+
 ## Interfaz operativa
 
 La pantalla principal usa la estructura real de la carpeta de Google Drive
