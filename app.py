@@ -64,6 +64,10 @@ with st.sidebar:
         index=0,
         key="app_section",
     )
+    # La exploración de obras aparece inmediatamente después de la
+    # navegación, en la barra lateral que el usuario puede contraer.
+    # El contenedor solo se rellena en Expedientes, sin alterar otras vistas.
+    folder_panel = st.container() if page == "Expedientes" else None
     st.divider()
     ready_drive = is_configured(st.secrets)
     ready_sheets = storage_configured(st.secrets)
@@ -80,7 +84,7 @@ with st.sidebar:
     st.button("Cerrar sesión", on_click=st.logout, use_container_width=True)
 
 if page == "Expedientes":
-    render_expedientes(allowed)
+    render_expedientes(allowed, folder_container=folder_panel)
 elif page == "Resultados":
     if not ready_sheets:
         st.error("Falta configurar Google Sheets para consultar los contratos.")
