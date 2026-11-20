@@ -151,7 +151,16 @@ def normalized_values(record: Any) -> tuple[dict[str,str], tuple[str,...]]:
     values["representante_legal"] = legal or "—"
     values["representante_tecnico"] = ""  # fuera del alcance del extractor nuevo
     for name in ("fecha_inicio_contractual","fecha_termino_contractual","fecha_firma_contrato"):
-        values[name] = short_date(values.get(name,""))
+        literal_date = values.get(name,"")
+        values[name] = short_date(literal_date)
+        if (
+            re.search(r"\bdes\s+del\s+mes\s+de\b", _fold(literal_date))
+            and re.fullmatch(r"\d{2}/\d{2}/\d{4}", values[name])
+        ):
+            notes.append(
+                f"{name}: se normalizó la expresión anómala «des del mes» "
+                "al identificar día, mes y año; cotejar el PDF original."
+            )
     values["monto_contrato"] = format_contract_amount(
         values.get("monto_contrato",""), getattr(record,"currency",""),
     )
