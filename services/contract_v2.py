@@ -22,7 +22,6 @@ from services.contract_role_rules import (
 CONTRACT_SCHEMA_V2 = "contrato-v2"
 # La API Gemini v8 devuelve 15 campos. El técnico subsiste solo en
 # la hoja histórica de 16 columnas para evitar una migración destructiva.
-CONTRACT_EXTRACTION_FIELDS = tuple()  # definido tras CONTRACT_V2_FIELDS
 
 CONTRACT_V2_FIELDS = (
     "numero_contrato",
@@ -131,7 +130,7 @@ class ContractExtractionV2(BaseModel):
     def fields_to_review(self) -> list[str]:
         return [
             name for name in CONTRACT_V2_FIELDS
-            if getattr(self, name).needs_review
+            if name != "representante_tecnico" and getattr(self, name).needs_review
         ]
 
     def flat_values(self) -> list[str]:
