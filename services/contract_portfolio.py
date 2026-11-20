@@ -67,6 +67,7 @@ class ContractRecord:
     full_values: Mapping[str, str] | None = None
     participants: tuple[Mapping[str, Any], ...] = ()
     normative_scope: str = "No determinado"
+    verification: Mapping[str, Any] | None = None
 
     @property
     def missing_fields(self) -> tuple[str, ...]:
