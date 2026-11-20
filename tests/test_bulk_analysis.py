@@ -167,27 +167,41 @@ class BulkPlannerTests(unittest.TestCase):
             self.assertIn(phrase,source)
 
     def test_bulk_runner_preserves_original_analysis_function_per_work(self):
-        from ui.expedientes import _run_bulk_batch
+        """Ejecutar el código del runner aislado: CI no instala Streamlit/Pandas."""
+        from unittest.mock import Mock
+        from services.document_classifier import code_from_filename
+        path=Path(__file__).resolve().parents[1]/"ui"/"expedientes.py"
+        source=ast.parse(path.read_text(encoding="utf-8"))
+        fn=next(x for x in source.body if isinstance(x,ast.FunctionDef)
+                and x.name=="_run_bulk_batch")
+        module=ast.Module(body=[
+            ast.ImportFrom(module="__future__",names=[ast.alias(name="annotations")],level=0),
+            fn,
+        ],type_ignores=[])
+        ns={"MAX_BATCH":10,"code_from_filename":code_from_filename}
+        analyze=Mock(side_effect=[
+            [{"Documento":"CONTRATO.pdf","Resultado":"Analizado y guardado"},
+             {"Documento":"PUC.pdf","Resultado":"Analizado y guardado"}],
+            [{"Documento":"CONTRATO.pdf","Resultado":"Analizado y guardado"}],
+        ])
+        ns["_analyze"]=analyze
+        exec(compile(ast.fix_missing_locations(module),str(path),"exec"),ns)
+
         inv,_,_=_fixture()
-        b=(
+        batch=(
             BulkItem(inv.works[0],inv.works[0].pdfs[0],"CONTRATO"),
             BulkItem(inv.works[0],inv.works[0].pdfs[1],"PUC"),
             BulkItem(inv.works[1],inv.works[1].pdfs[0],"CONTRATO"),
         )
-        with patch("ui.expedientes._analyze") as analyze:
-            analyze.side_effect=[
-                [{"Documento":"CONTRATO.pdf","Resultado":"Analizado y guardado"},
-                 {"Documento":"PUC.pdf","Resultado":"Analizado y guardado"}],
-                [{"Documento":"CONTRATO.pdf","Resultado":"Analizado y guardado"}],
-            ]
-            log=_run_bulk_batch(b,"gemini-test")
+        log=ns["_run_bulk_batch"](batch,"gemini-test")
         self.assertEqual(analyze.call_count,2)
         self.assertEqual(len(analyze.call_args_list[0].args[1]),2)
         self.assertEqual(len(analyze.call_args_list[1].args[1]),1)
         self.assertEqual(len(log),3)
         self.assertEqual(log[-1]["Carpeta"],"010_Rehabilitación")
         with self.assertRaisesRegex(ValueError,"10 PDFs"):
-            _run_bulk_batch(b*4,"gemini-test")
+            ns["_run_bulk_batch"](batch*4,"gemini-test")
+
 
 
 if __name__=="__main__":
