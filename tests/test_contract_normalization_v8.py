@@ -154,6 +154,8 @@ class NormalizationV8Tests(unittest.TestCase):
             {"anticipo":"se dará 30 por ciento"},
             {"tipo_contrato":"Proyecto Ejecutivo"},
             {"modalidad_adjudicacion":"AD"},
+            {"fecha_firma_contrato":"31/02/2025"},
+            {"fecha_termino_contractual":"29/02/2025"},
         ):
             with self.subTest(data=data):
                 with self.assertRaises(VerificationError):
