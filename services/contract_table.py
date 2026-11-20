@@ -39,7 +39,8 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str,str]
             record.participants
         )
         row["Ámbito normativo preliminar"] = (
-            norm["regimen"] or record.normative_scope
+            "No determinado (versión anterior)" if record.full_values is None
+            else norm["regimen"] or record.normative_scope
         )
         row["Estado de verificación"] = (
             review.get("estado_revision") or "Sin verificación guardada"
