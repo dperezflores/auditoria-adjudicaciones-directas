@@ -170,7 +170,7 @@ def authorized_legal_role(
     explicit = (
         r"\brepresentante(?:s)? legal(?:es)?\b",
         r"\bapoderad[oa](?:s)?(?: legal| general| de la empresa)?\b",
-        r"\b(?:en|a nombre y en|por)\s+representacion\s+de\b",
+        r"\b(?:en|en nombre y|a nombre y en|por)\s+representacion\s+de\b",
         r"\brepresentante de la empresa\b",
         r"\brepresentar(?:la|lo|las|los)? legalmente\b",
         r"\b(?:socio\s+)?administrador[ao]?\s+unic[oa]\b",
