@@ -121,6 +121,10 @@ def _render_details(record: ContractRecord) -> None:
                     {"Dato": label, "Texto literal del contrato": record.full_values.get(key) or "No localizado"}
                     for key, label in FIELD_LABELS_V2
                     if key not in ("legislacion_citada", "fuente_financiamiento")
+                    and not (
+                        key == "representante_tecnico"
+                        and record.extraction_prompt == "contrato-prompt-v8"
+                    )
                 ]),
                 hide_index=True, use_container_width=True,
                 column_config={
@@ -157,8 +161,7 @@ def _render_details(record: ContractRecord) -> None:
                     "Clasificación para el listado, derivada de citas verificables "
                     "(no sustituye los literales almacenados): "
                     f"tipo de contrato: {type_view}; "
-                    f"representante legal: {legal_view or 'No acreditado'}; "
-                    f"representante técnico: {technical_view or 'No acreditado'}."
+                    f"representante legal: {legal_view or 'No acreditado'}."
                 )
         if record.missing_fields:
             labels = dict(FIELD_LABELS_V2) if record.full_values else dict(FIELD_LABELS)
@@ -175,18 +178,10 @@ def _render_details(record: ContractRecord) -> None:
                 "La lista incluye testigos y servidores públicos; firmar "
                 "el contrato no acredita representación técnica de la empresa."
             )
-            _, accredited_technical = record_representation_fields(record)
             st.dataframe(pd.DataFrame([
                 {
                     "Nombre (literal)": row.get("nombre") or "",
                     "Cargo o carácter (literal)": row.get("cargo_o_caracter") or "No localizado",
-                    "Representación técnica de la contratista": (
-                        "Acreditada" if (
-                            accredited_technical
-                            and _person_name(row.get("nombre"))
-                            == _person_name(accredited_technical)
-                        ) else "No acreditada"
-                    ),
                     "Carácter de testigo": (
                         "Testigo (cita explícita)" if "testigos" in fold(
                             row.get("evidencia") or ""
@@ -221,7 +216,11 @@ def _render_details(record: ContractRecord) -> None:
             "La evidencia y el número de página son referencias propuestas por IA. "
             "Los textos se conservan sin normalizar."
         )
-        fields = FIELD_LABELS_V2 if record.full_values is not None else FIELD_LABELS
+        fields = (
+            tuple((k,l) for k,l in FIELD_LABELS_V2
+                  if k!="representante_tecnico" or record.extraction_prompt!="contrato-prompt-v8")
+            if record.full_values is not None else FIELD_LABELS
+        )
         details = []
         for field, label in fields:
             source = record.evidence.get(field) or {}
