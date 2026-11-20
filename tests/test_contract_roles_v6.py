@@ -237,7 +237,7 @@ class ContractRolesV6Tests(unittest.TestCase):
         data=contract_table_rows([record])[0]
         self.assertEqual(data["Tipo de contrato"], "Precios Unitarios")
         self.assertEqual(data["Representante legal"], NO_APLICA_FISICA)
-        self.assertEqual(data["Representante técnico"], "—")
+        self.assertNotIn("Representante técnico", data)
         self.assertEqual(record.full_values["tipo_contrato"], "")
         self.assertEqual(record.full_values["representante_tecnico"],
                          "ARQ. PERSONA QUE SOLO FIRMA")
