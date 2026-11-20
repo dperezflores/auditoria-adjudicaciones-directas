@@ -126,7 +126,7 @@ class ContractPdfV7Tests(unittest.TestCase):
                     })
         self.assertEqual(record_representation_fields(row)[1],"")
         display=contract_table_rows([row])[0]
-        self.assertEqual(display["Representante técnico"],"—")
+        self.assertNotIn("Representante técnico",display)
         self.assertIn(CASE_NAME,display["Personas que participan en el contrato"])
 
     def test_marian_arreola_president_council_is_authorized_role(self):
@@ -178,7 +178,7 @@ class ContractPdfV7Tests(unittest.TestCase):
         self.assertEqual(CONTRACT_SCHEMA_V2,"contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS),16)
         self.assertIn("extiende la evidencia hasta el",PROMPT_CONTRATO)
-        self.assertIn("modalidad ECONÓMICA",PROMPT_CONTRATO)
+        self.assertIn("Modalidad ECONÓMICA",PROMPT_CONTRATO)
         self.assertIn("\"TESTIGOS\"",PROMPT_CONTRATO)
 
 
