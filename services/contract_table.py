@@ -5,6 +5,7 @@ from typing import Any, Sequence
 from services.contract_portfolio import ContractRecord
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_normalization import normalized_values
+from services.amount_iva import identify_record_iva
 
 
 def participant_cell(people: Sequence[dict[str, Any]]) -> str:
@@ -35,6 +36,18 @@ def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str,str]
                 continue
             row[label]=norm.get(key) or "—"
         row["IVA del importe"] = norm["iva"]
+        original_iva=identify_record_iva(record)
+        review_fields=(record.verification or {}).get("campos") or {}
+        row["Origen del IVA"] = (
+            "Confirmado por auditor" if "iva" in review_fields
+            else "Supuesto provisional (sin evidencia explícita)"
+            if original_iva.basis=="Por confirmar" and (
+                original_iva.source!="Indicaciones contradictorias en monto y evidencia"
+            )
+            else "Citas contradictorias; revisar"
+            if original_iva.source=="Indicaciones contradictorias en monto y evidencia"
+            else "Expresamente documentado"
+        )
         row["Personas que participan en el contrato"]=participant_cell(
             record.participants
         )
