@@ -135,17 +135,56 @@ def participant_role_conflicts_with_technical(
     return False
 
 
-def authorized_legal_role(name: str | None, evidence: str | None) -> bool:
-    """No basta con aparecer como firmante en la última página."""
+def _legal_role_context(name: str | None, evidence: str | None) -> str:
+    """Fragmento de la misma cita cercano al nombre, no un cargo ajeno.
+
+    Requiere el nombre completo normalizado con límites de palabra. Una
+    mención al representante legal de OTRA persona en el mismo párrafo no
+    basta cuando está lejos del nombre de interés.
+    """
+    person = _person_name(name)
     citation = fold(evidence)
-    if not _name_in_evidence(name, evidence):
+    if len(person) < 9:
+        return ""
+    found = re.search(r"(?<!\w)" + re.escape(person) + r"(?!\w)", citation)
+    if not found:
+        return ""
+    return citation[max(0, found.start() - 130):found.end() + 150]
+
+
+def authorized_legal_role(
+    name: str | None,
+    evidence: str | None,
+    contractor: str | None = None,
+) -> bool:
+    """Detectar representación legal general, siempre con cita y nombre.
+
+    Se reconocen fórmulas contractuales habituales, no solo las palabras
+    «representante legal». Una firma, el nombre o una profesión no bastan.
+    Si solo consta «representada por» se exige que la propia cita identifique
+    también a la empresa contratista, para no confundir con la contratante.
+    """
+    context = _legal_role_context(name, evidence)
+    if not context:
         return False
-    return bool(re.search(
-        r"\b(?:representante legal|apoderad[oa] legal|apoderad[oa] general"
-        r"|en representacion de|representante de la empresa"
-        r"|presidente (?:del |de )?consejo de administracion"
-        r"|representar(?:la|lo|las|los)? legalmente)\b",
-        citation,
+    explicit = (
+        r"\brepresentante(?:s)? legal(?:es)?\b",
+        r"\bapoderad[oa](?:s)?(?: legal| general| de la empresa)?\b",
+        r"\b(?:en|a nombre y en|por)\s+representacion\s+de\b",
+        r"\brepresentante de la empresa\b",
+        r"\brepresentar(?:la|lo|las|los)? legalmente\b",
+        r"\b(?:socio\s+)?administrador[ao]?\s+unic[oa]\b",
+        r"\bpresident[ea]?\s+(?:del?\s+)?consejo de administracion\b",
+    )
+    if any(re.search(pattern, context) for pattern in explicit):
+        return True
+
+    entity = fold(contractor)
+    company_cited = bool(
+        entity and len(entity) >= 12 and entity in context
+    )
+    return company_cited and bool(re.search(
+        r"\brepresentad[ao]\s+(?:en este acto\s+)?por\b", context
     ))
 
 
@@ -233,7 +272,7 @@ def record_representation_fields(record: object) -> tuple[str, str]:
     elif legal and fold(legal) == fold(NO_APLICA_FISICA):
         # Sin evidencia de PF, no se admite el marcador.
         legal = ""
-    elif legal and not authorized_legal_role(legal, legal_quote):
+    elif legal and not authorized_legal_role(legal, legal_quote, contractor):
         legal = ""
 
     if technical and (
