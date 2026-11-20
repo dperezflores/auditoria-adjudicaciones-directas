@@ -93,7 +93,10 @@ class ContractRecord:
         if self.source_schema == "contrato-v2":
             return (
                 "Contrato ampliado · datos incompletos"
-                if self.completeness < len(CONTRACT_V2_FIELDS)
+                if self.completeness < (
+                    15 if self.extraction_prompt=="contrato-prompt-v8"
+                    else len(CONTRACT_V2_FIELDS)
+                )
                 else "Contrato ampliado · pendiente de verificar"
             )
         if self.source_schema == "documento-schema-v1":
