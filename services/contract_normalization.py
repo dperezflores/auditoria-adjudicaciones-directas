@@ -78,7 +78,9 @@ def normalize_advance(raw: str | None) -> Advance:
         r"\banticipo de 0(?:[.,]0+)?\s*%\b",
     )
     percentages: set[Decimal] = set()
-    for match in PERCENT_PATTERN.finditer(text):
+    # El texto plegado elimina puntos/comas: los porcentajes se extraen
+    # siempre del literal para conservar los decimales originales.
+    for match in PERCENT_PATTERN.finditer(str(raw)):
         try:
             n=Decimal(match.group(1).replace(",","."))
         except InvalidOperation:
