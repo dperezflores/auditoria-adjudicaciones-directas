@@ -245,8 +245,14 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     gross = parse_amount(raw)
     # Los límites se expresan en pesos mexicanos; divisas expresas distintas
     # no deben compararse contra MXN sin una conversión documental acreditada.
+    # Conservar divisa original antes de formatear monto: la vista normalizada
+    # puede quitar «USD»/«EUR», pero eso NO lo convierte en pesos.
+    source_amount=(getattr(record,"full_values",None) or {}).get("monto_contrato","")
+    monetary_text=(
+        raw if "monto_contrato" in manual else source_amount or raw
+    )
     foreign_currency = bool(re.search(
-        r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", raw, re.IGNORECASE,
+        r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", monetary_text, re.IGNORECASE,
     ))
     # El dato literal determina IVA cuando es explícito. Si no lo es,
     # se asume 16 % INCLUIDO provisionalmente; se etiqueta el supuesto.
