@@ -143,7 +143,8 @@ def authorized_legal_role(name: str | None, evidence: str | None) -> bool:
     return bool(re.search(
         r"\b(?:representante legal|apoderad[oa] legal|apoderad[oa] general"
         r"|en representacion de|representante de la empresa"
-        r"|presidente (?:del |de )?consejo de administracion)\b",
+        r"|presidente (?:del |de )?consejo de administracion"
+        r"|representar(?:la|lo|las|los)? legalmente)\b",
         citation,
     ))
 

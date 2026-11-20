@@ -76,8 +76,9 @@ def short_date(raw: str) -> str:
     patterns = (
         (r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", "iso"),
         (r"(?<!\d)(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})(?!\d)", "numeric"),
-        (r"(?<!\d)(\d{1,2})\s*(?:dias?\s*)?(?:de[l]?\s*)?"
-         r"(?:mes\s+de\s+)?("+_MONTH_PATTERN+r")\s+"
+        (r"(?<!\d)(\d{1,2})\s*(?:dias?\s*)?"
+         r"(?:des\s+del\s+mes\s+de\s+|(?:de[l]?\s*)?(?:mes\s+de\s+)?)"
+         r"("+_MONTH_PATTERN+r")\s+"
          r"(?:de|del)\s+(?:ano\s+(?:de\s+)?)?(\d{4})(?!\d)", "month"),
     )
     for pattern, kind in patterns:
