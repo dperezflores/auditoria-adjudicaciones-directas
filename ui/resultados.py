@@ -23,13 +23,15 @@ from services.document_export import (
 )
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
+from services.contract_verifications import read_verified_portfolio
+from ui.contract_verification import render_verification_form
 from services.contract_role_rules import record_representation_fields, suggested_display_type, _person_name, fold
 from ui.document_crosscheck import render_document_crosscheck
 
 
 def _fetch_portfolio() -> None:
     client = create_sheets_client(st.secrets["gcp_service_account"])
-    st.session_state["results_portfolio"] = read_contract_portfolio(
+    st.session_state["results_portfolio"] = read_verified_portfolio(
         client, st.secrets["storage"]["spreadsheet_id"]
     )
     st.session_state["results_last_read"] = (
@@ -99,6 +101,7 @@ def _render_aggregate_visuals(records: tuple[ContractRecord, ...]) -> None:
 def _render_details(record: ContractRecord) -> None:
     """Ficha reactiva al seleccionar una fila del listado contractual."""
     st.markdown("### Ficha del contrato seleccionado")
+    render_verification_form(record,prefix="results")
     st.write(record.values["nombre_obra"] or "Obra o servicio no localizado")
     st.caption(
         f"Número: {record.values['numero_contrato'] or 'No localizado'} · "
@@ -361,13 +364,17 @@ def render_results() -> None:
     )
 
     st.markdown("#### Listado de obras y contratos")
-    st.caption("Versión de vista: monto único v2 · Sin cálculos de IVA")
+    if st.session_state.pop("verification_saved_notice",None):
+        st.success("Se guardó la verificación. Se actualizaron los datos de la tabla.")
+    st.caption("Vista normalizada · Anticipo en porcentaje · IVA identificado o supuesto provisional")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
-        "Las modalidades y las fechas se muestran normalizadas (DD/MM/AAAA). "
-        "El importe contractual aparece en una sola columna con formato moneda, "
-        "tal como fue extraído, sin cálculos adicionales. "
-        "Desplázate horizontalmente y selecciona una fila para ver el texto original."
+        "Modalidades, tipo, anticipo y fechas se muestran normalizados; "
+        "el importe mantiene su valor contractual (con formato moneda). "
+        "El IVA se identifica documentalmente o se etiqueta como supuesto "
+        "provisional cuando no consta. Las revisiones guardadas por el auditor "
+        "se aplican a esta vista y a AD-06. "
+        "Selecciona una fila para consultar los literales originales."
     )
     st.caption(
         "La normalización es únicamente visual y no modifica los datos extraídos. "
