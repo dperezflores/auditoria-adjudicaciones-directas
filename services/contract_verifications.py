@@ -134,11 +134,15 @@ def _validate_fields(changes: Mapping[str,str]) -> dict[str,str]:
             raise VerificationError("Tipo de contrato no reconocido.")
         if k=="modalidad_adjudicacion" and val not in CATEGORIES[k]:
             raise VerificationError("Modalidad de adjudicación no reconocida.")
-        if k.startswith("fecha_") and (
-            not bool(__import__("re").fullmatch(r"\d{2}/\d{2}/\d{4}",val))
-            or short_date(val)!=val
-        ):
-            raise VerificationError("Las fechas manuales se expresan como DD/MM/AAAA válidas.")
+        if k.startswith("fecha_"):
+            try:
+                if not __import__("re").fullmatch(r"\d{2}/\d{2}/\d{4}",val):
+                    raise ValueError("Formato no válido")
+                datetime.strptime(val,"%d/%m/%Y")
+            except ValueError as exc:
+                raise VerificationError(
+                    "Las fechas manuales deben existir y expresarse DD/MM/AAAA."
+                ) from exc
         clean[k]=val
     return clean
 
