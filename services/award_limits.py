@@ -258,6 +258,7 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     # se asume 16 % INCLUIDO provisionalmente; se etiqueta el supuesto.
     iva_detection = identify_record_iva(record)
     inferred_iva = iva_detection.basis
+    iva_override = iva
     iva = iva or fields["iva"]
     net = None
     if gross is not None and gross > 0 and not foreign_currency:
@@ -290,8 +291,8 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
             "El valor del monto y su evidencia contienen indicaciones "
             "contradictorias del IVA; cotejar cláusula original."
         )
-    if "iva" in manual and iva != inferred_iva:
-        warnings.append("El IVA fue confirmado o corregido por el auditor; revisar observación.")
+    if ("iva" in manual or iva_override is not None) and iva != inferred_iva:
+        warnings.append("Tratamiento de IVA confirmado manualmente; revisar el contrato y la observación.")
     row = (catalog.municipal.get((year,fold(municipality).upper())) if
            regime == "Municipal" else catalog.estatal.get(year) if
            regime == "Estatal" else None)
