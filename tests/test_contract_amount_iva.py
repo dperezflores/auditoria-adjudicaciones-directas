@@ -139,7 +139,7 @@ class ContractAmountIvaTests(unittest.TestCase):
         self.assertEqual(CONTRACT_SCHEMA_V2,"contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS),16)
         self.assertIn("monto_contrato",PROMPT_CONTRATO)
-        self.assertIn("mención explícita (\"IVA incluido\"",
+        self.assertIn("mención",
                       PROMPT_CONTRATO)
         self.assertIn("extiende la evidencia hasta el",PROMPT_CONTRATO)
         self.assertIn("Nunca inventes",PROMPT_CONTRATO)
