@@ -129,8 +129,9 @@ class LimitsTests(unittest.TestCase):
 
     def test_unknown_iva_never_assumed(self):
         r=evaluate(contract(monto_contrato="$2,172,571.00"),self.catalog)
-        self.assertEqual(r.state,"Requiere revisión")
-        self.assertIsNone(r.net)
+        self.assertEqual(r.state,"Dentro del límite")
+        self.assertEqual(r.net,Decimal("1872906.03"))
+        self.assertTrue(any("SUPUESTO PROVISIONAL" in w for w in r.warnings))
         override=evaluate(contract(monto_contrato="$2,172,571.00"),self.catalog,
                           iva="Con IVA (16%)")
         self.assertEqual(override.state,"Dentro del límite")
