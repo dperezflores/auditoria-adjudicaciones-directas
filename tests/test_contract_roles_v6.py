@@ -247,13 +247,13 @@ class ContractRolesV6Tests(unittest.TestCase):
         )
 
     def test_prompt_version_and_full_contract_schema_unchanged(self):
-        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v7")
+        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v8")
         self.assertEqual(CONTRACT_SCHEMA_V2, "contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS), 16)
         self.assertEqual(len(CONTRACT_V2_HEADERS), 23)
         self.assertIn("por su propio derecho", PROMPT_CONTRATO)
-        self.assertIn("TERCERA/MONTO", PROMPT_CONTRATO)
-        self.assertIn("Firmar el contrato NO acredita", PROMPT_CONTRATO)
+        self.assertIn("cláusula de MONTO", PROMPT_CONTRATO)
+        self.assertIn("TESTIGOS", PROMPT_CONTRATO)
 
 
 if __name__ == "__main__":
