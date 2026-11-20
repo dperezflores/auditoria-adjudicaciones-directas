@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 
+from services.bulk_analysis import BULK_CODES, BulkItem, plan_bulk_analysis
 from services.analysis_catalog import (
     FileStatus, file_states, folder_states, load_status_tables,
 )
@@ -78,6 +79,7 @@ def _refresh_inventory() -> None:
     # Un resultado anterior puede pertenecer a otra sesión de expedientes.
     st.session_state.pop("ex_last_run", None)
     st.session_state.pop("ex_last_run_obra_id", None)
+    st.session_state.pop("ex_bulk_last_run", None)
 
 
 def _load_data() -> bool:
@@ -623,6 +625,175 @@ def _analyze(
     return log
 
 
+def _run_bulk_batch(batch: tuple[BulkItem, ...], model: str) -> list[dict[str, str]]:
+    """Procesamiento multicarpeta SECUENCIAL, mismo extractor/caché por obra.
+
+    No hay una nueva ruta de Gemini: _analyze valida el PDF y registra
+    resultados en Sheets con el mismo cerrojo que la extracción individual.
+    """
+    if not batch or len(batch) > MAX_BATCH:
+        raise ValueError("El lote no contiene un bloque válido de hasta 10 PDFs.")
+    grouped: dict[str, tuple[WorkRecord, list[DocumentRecord]]] = {}
+    for item in batch:
+        if item.work.id not in grouped:
+            grouped[item.work.id] = (item.work, [])
+        grouped[item.work.id][1].append(item.document)
+    log: list[dict[str, str]] = []
+    for work, docs in grouped.values():
+        for entry in _analyze(work, docs, model):
+            log.append({
+                "Carpeta": work.name,
+                "Documento": entry["Documento"],
+                "Tipo": (
+                    code_from_filename(entry["Documento"], "application/pdf")
+                    or "Sistema"
+                ),
+                "Resultado": entry["Resultado"],
+            })
+    return log
+
+
+def _render_bulk_analysis(
+    inventory: DriveInventory,
+    tables: dict[str, list[dict[str, str]]],
+    states: dict[str, FileStatus],
+) -> None:
+    """Elegir todas o algunas carpetas y CONTRATO, PUC o ambos.
+
+    Una pulsación procesa como máximo MAX_BATCH PDFs, incluso si se
+    seleccionaron 100 carpetas. Para el siguiente bloque se vuelve a
+    pulsar tras ver resultados, sin volver a cobrar PDFs ya completados.
+    """
+    st.markdown("#### Analizar documentos en varias carpetas")
+    st.caption(
+        "Elige el universo de obras y qué tipo documental analizar. "
+        "Se usan las mismas carpetas de Google Drive y los mismos "
+        "extractores CONTRATO-v2 y PUC-v1."
+    )
+    works_by_id = {work.id: work for work in inventory.works}
+    choices = [work.id for work in inventory.works]
+    scope = st.radio(
+        "Carpetas a incluir",
+        ["Todas las carpetas", "Seleccionar varias carpetas"],
+        horizontal=True, key="ex_bulk_scope",
+    )
+    if scope == "Todas las carpetas":
+        folder_ids = choices
+        st.caption(f"Se incluyen las {len(choices)} carpetas del inventario.")
+    else:
+        folder_ids = st.multiselect(
+            "Selecciona las carpetas",
+            choices,
+            key="ex_bulk_selected_folders",
+            format_func=lambda folder_id: works_by_id[folder_id].name,
+            help="Puedes buscar por el nombre de la carpeta y elegir varias obras.",
+        )
+    codes = st.multiselect(
+        "Documentos a analizar en cada carpeta",
+        BULK_CODES,
+        default=["CONTRATO"],
+        key="ex_bulk_codes",
+        format_func=lambda code: (
+            "CONTRATO.pdf" if code == "CONTRATO" else "PUC.pdf"
+        ),
+        help="Selecciona CONTRATO, PUC o los dos. Los demás documentos no se procesarán.",
+    )
+    if not folder_ids or not codes:
+        st.info("Selecciona al menos una carpeta y un tipo documental.")
+        return
+    try:
+        plan = plan_bulk_analysis(inventory, tables, states, folder_ids, codes)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Carpetas incluidas", plan.folders)
+    c2.metric("PDF pendientes", plan.ready)
+    c3.metric("Ya analizados", plan.count("Ya analizado"))
+    c4.metric(
+        "Requieren atención",
+        sum(plan.count(k) for k in ("Bloqueado", "Ambiguo", "Desactualizado")),
+    )
+
+    if plan.decisions:
+        with st.expander(
+            "Ver documentos y estado por carpeta", expanded=False,
+        ):
+            st.dataframe(pd.DataFrame([
+                {
+                    "Carpeta": entry.folder,
+                    "Tipo": entry.code,
+                    "Documento": entry.document,
+                    "Estado": entry.status,
+                    "Detalle": entry.detail,
+                }
+                for entry in plan.decisions
+            ]), hide_index=True, use_container_width=True, height=345)
+            st.caption(
+                "Los documentos ya analizados se omiten para evitar gasto "
+                "de IA. Los archivos duplicados, desactualizados o con "
+                "intentos incompletos se excluyen hasta su revisión."
+            )
+
+    batch = plan.pending[:MAX_BATCH]
+    if batch:
+        st.markdown(f"**Próximo bloque: {len(batch)} de {plan.ready} PDF pendientes**")
+        st.caption(
+            "Máximo 10 documentos por ejecución. Se procesarán de forma "
+            "secuencial, aunque correspondan a distintas carpetas. "
+            "Si hay más pendientes, vuelve a pulsar el botón después "
+            "de revisar el resultado del bloque."
+        )
+        st.dataframe(pd.DataFrame([
+            {
+                "Carpeta": item.work.name,
+                "Documento": item.document.name,
+                "Tipo": item.code,
+                "Tamaño (MB)": round(item.document.size_bytes / 1_000_000, 2),
+            } for item in batch
+        ]), hide_index=True, use_container_width=True, height=295)
+    else:
+        st.success(
+            "No hay documentos pendientes compatibles con esta selección. "
+            "Revisa los omitidos o actualiza Google Drive si es necesario."
+        )
+
+    gemini = st.secrets.get("gemini", {})
+    model = gemini.get("model") or DEFAULT_MODEL
+    st.caption(f"Modelo Gemini: {model}. Ningún PDF se envía hasta tu confirmación.")
+    approved = st.checkbox(
+        "Confirmo que deseo analizar los documentos de este bloque "
+        "y que cada extracción nueva puede consumir API de Gemini.",
+        key="ex_bulk_approve",
+    )
+    disabled = not batch or not approved or not gemini.get("api_key")
+    if st.button(
+        f"Analizar siguiente bloque de {len(batch)} PDF(s)",
+        type="primary", disabled=disabled, key="ex_bulk_analyze",
+    ):
+        st.session_state["ex_bulk_last_run"] = _run_bulk_batch(
+            tuple(batch), model,
+        )
+        st.session_state["ex_bulk_approve"] = False
+        # El análisis ya actualizó Sheets; refrescar Resultados y AD-06.
+        st.session_state.pop("results_portfolio", None)
+        st.session_state.pop("award_limits_contracts", None)
+        st.rerun()
+
+    if st.session_state.get("ex_bulk_last_run"):
+        st.markdown("#### Resultado del último bloque multicarpeta")
+        st.dataframe(
+            pd.DataFrame(st.session_state["ex_bulk_last_run"]),
+            hide_index=True, use_container_width=True,
+        )
+        st.caption(
+            "Los documentos finalizados ya no se seleccionarán en el "
+            "siguiente bloque. Si algún documento falló o no quedó "
+            "confirmado, revisa Extracciones y su estado antes de reintentar."
+        )
+
+
 def _render_contract_upgrade(
     doc: DocumentRecord, obra: WorkRecord,
     tables: dict[str, list[dict[str, str]]],
@@ -924,6 +1095,16 @@ def render_expedientes(authenticated: bool, folder_container=None) -> None:
     obra = next(work for work in inventory.works if work.id == obra_id)
 
     st.markdown("### Extracción documental")
+    selection_mode = st.radio(
+        "Modalidad de análisis",
+        ["Una carpeta", "Varias carpetas"],
+        horizontal=True, key="ex_analysis_mode",
+        help="Una carpeta conserva el flujo habitual. Varias carpetas "
+             "permite elegir CONTRATO, PUC o ambos en todas o algunas obras.",
+    )
+    if selection_mode == "Varias carpetas":
+        _render_bulk_analysis(inventory, tables, states)
+        return
     st.caption(
         f"Obra seleccionada: **{obra.name}** · "
         f"{folders[obra.id].complete}/{folders[obra.id].total} documentos procesados"
