@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 from services.contract_display import short_date, normalize_award_method
 from services.contract_portfolio import parse_amount
 from services.amount_iva import identify_contract_amount_iva, identify_record_iva
+from services.contract_normalization import normalized_values, verified_fields
 from services.drive_service import _list_children, validate_id, FOLDER_MIME, XLSX_MIME
 
 FILENAME = "ADJUDICACION_LIM_2021_2026.xlsx"
@@ -228,16 +229,18 @@ def year_from_date(value: str) -> int | None:
 
 def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
              iva: str | None = None, year: int | None = None) -> Result:
-    fields = record.full_values or {}
-    law,funding = fields.get("legislacion_citada",""),fields.get("fuente_financiamiento","")
-    original_regime = infer_regime(law,funding)
-    regime = regime or original_regime
+    fields, normalization_notes = normalized_values(record)
+    manual = verified_fields(record)
+    law, funding = fields.get("legislacion_citada",""), fields.get("fuente_financiamiento","")
+    original_regime = infer_regime(law, funding)
+    regime = regime or fields.get("regimen") or original_regime
     # Para este piloto el municipio es un parámetro de alcance institucional,
     # NO un dato que dependa de la calidad de extracción del contrato.
     municipality = PILOT_MUNICIPALITY
     method = normalize_award_method(fields.get("modalidad_adjudicacion",""))
     original_year = year_from_date(fields.get("fecha_firma_contrato",""))
-    year = original_year if year is None else year
+    if year is None:
+        year = int(fields["ejercicio"]) if fields.get("ejercicio", "").isdigit() else original_year
     raw = fields.get("monto_contrato","")
     gross = parse_amount(raw)
     # Los límites se expresan en pesos mexicanos; divisas expresas distintas
@@ -245,26 +248,29 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
     foreign_currency = bool(re.search(
         r"\b(?:usd|eur|d[oó]lares?|euros?)\b|€", raw, re.IGNORECASE,
     ))
-    # La extracción v2 ya conserva página y evidencia del monto.
-    # Reconocer el tratamiento fiscal sin alterar los textos originales.
+    # El dato literal determina IVA cuando es explícito. Si no lo es,
+    # se asume 16 % INCLUIDO provisionalmente; se etiqueta el supuesto.
     iva_detection = identify_record_iva(record)
     inferred_iva = iva_detection.basis
-    iva = iva or inferred_iva
+    iva = iva or fields["iva"]
     net = None
     if gross is not None and gross > 0 and not foreign_currency:
         if iva == "Sin IVA":
             net = gross.quantize(CENT, rounding=ROUND_HALF_UP)
         elif iva == "Con IVA (16%)":
             net = (gross/Decimal("1.16")).quantize(CENT,rounding=ROUND_HALF_UP)
-    warnings = []
-    if not fields:
-        warnings.append("El contrato no cuenta con extracción especializada de 16 campos.")
+    warnings = list(normalization_notes)
+    if not record.full_values:
+        warnings.append("El contrato no cuenta con extracción especializada de campos.")
     if year is None:
         warnings.append("Fecha de firma ausente, inválida o fuera de 2021–2026.")
     if year is not None and year != original_year:
-        warnings.append("El ejercicio fue confirmado manualmente; cotejar fecha del procedimiento.")
+        warnings.append(
+            "El ejercicio seleccionado difiere o no consta en la fecha de firma; "
+            "verificar el ejercicio del procedimiento."
+        )
     if regime != original_regime:
-        warnings.append("Régimen confirmado manualmente: verificar su sustento documental.")
+        warnings.append("El régimen no coincide con la inferencia documental; cotejar sustento.")
     if regime not in ("Municipal","Estatal"):
         warnings.append("Régimen no determinado por ley citada y recursos.")
     if method not in METHODS:
@@ -278,8 +284,8 @@ def evaluate(record: Any, catalog: Catalog, *, regime: str | None = None,
             "El valor del monto y su evidencia contienen indicaciones "
             "contradictorias del IVA; cotejar cláusula original."
         )
-    if iva != inferred_iva:
-        warnings.append("Tratamiento de IVA confirmado manualmente; verificar el contrato.")
+    if "iva" in manual and iva != inferred_iva:
+        warnings.append("El IVA fue confirmado o corregido por el auditor; revisar observación.")
     row = (catalog.municipal.get((year,fold(municipality).upper())) if
            regime == "Municipal" else catalog.estatal.get(year) if
            regime == "Estatal" else None)
