@@ -191,7 +191,7 @@ def parse_contract_v2(payload: dict[str, Any] | str, *, literal_only: bool = Fal
     persons = data["personas"]
     observations = data["observaciones"]
     if not isinstance(fields, list) or len(fields) > (len(CONTRACT_EXTRACTION_FIELDS) if literal_only else len(CONTRACT_V2_FIELDS)):
-        raise ValueError("Cantidad de campos del contrato inesperada.")
+        raise ValueError("El prompt literal requiere exactamente 15 campos ordenados." if literal_only else "Cantidad de campos del contrato inesperada.")
     if not isinstance(persons, list) or len(persons) > 50:
         raise ValueError("Listado de personas inválido.")
     if not isinstance(observations, list) or len(observations) > 40:
