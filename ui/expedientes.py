@@ -670,8 +670,16 @@ def _render_bulk_analysis(
         "Se usan las mismas carpetas de Google Drive y los mismos "
         "extractores CONTRATO-v2 y PUC-v1."
     )
-    works_by_id = {work.id: work for work in inventory.works}
-    choices = [work.id for work in inventory.works]
+    # «Recursos» contiene bases de referencia y no es un expediente de obra.
+    allowed_works = [
+        work for work in inventory.works
+        if work.name.strip().casefold() != "recursos"
+    ]
+    works_by_id = {work.id: work for work in allowed_works}
+    choices = [work.id for work in allowed_works]
+    if not choices:
+        st.info("No hay carpetas de obra disponibles para el análisis múltiple.")
+        return
     scope = st.radio(
         "Carpetas a incluir",
         ["Todas las carpetas", "Seleccionar varias carpetas"],
@@ -762,8 +770,17 @@ def _render_bulk_analysis(
     gemini = st.secrets.get("gemini", {})
     model = gemini.get("model") or DEFAULT_MODEL
     st.caption(f"Modelo Gemini: {model}. Ningún PDF se envía hasta tu confirmación.")
-    # Restablecer confirmación ANTES de instanciar el widget en la
-    # siguiente ejecución; Streamlit prohíbe escribir su clave después.
+    # Una confirmación solo autoriza ESTE conjunto exacto de obras,
+    # tipos y PDFs; al cambiar la selección o avanzar de bloque, caduca.
+    signature = (
+        tuple(folder_ids), tuple(codes),
+        tuple((item.work.id, item.document.id) for item in batch),
+    )
+    if st.session_state.get("ex_bulk_approval_signature") != signature:
+        st.session_state["ex_bulk_approval_signature"] = signature
+        st.session_state["ex_bulk_approve"] = False
+    # Restablecer ANTES de instanciar el widget en el siguiente rerun;
+    # Streamlit prohíbe modificar su clave después de crear el checkbox.
     if st.session_state.pop("ex_bulk_reset_approval", False):
         st.session_state["ex_bulk_approve"] = False
     approved = st.checkbox(
