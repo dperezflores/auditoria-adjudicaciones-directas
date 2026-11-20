@@ -174,11 +174,11 @@ class ContractPdfV7Tests(unittest.TestCase):
         self.assertNotIn("delete_analysis(",screen.split("def _render_contract_upgrade",1)[1].split("def _render_delete_analysis",1)[0])
 
     def test_prompt_v7_preserves_schema_and_targets_missing_tail(self):
-        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v7")
+        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v8")
         self.assertEqual(CONTRACT_SCHEMA_V2,"contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS),16)
-        self.assertIn("no cortes el párrafo inmediatamente después",PROMPT_CONTRATO)
-        self.assertIn("El encabezado \"CONTRATO DE SERVICIOS",PROMPT_CONTRATO)
+        self.assertIn("extiende la evidencia hasta el",PROMPT_CONTRATO)
+        self.assertIn("modalidad ECONÓMICA",PROMPT_CONTRATO)
         self.assertIn("\"TESTIGOS\"",PROMPT_CONTRATO)
 
 
