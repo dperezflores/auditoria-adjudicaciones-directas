@@ -160,7 +160,14 @@ def normalized_values(record: Any) -> tuple[dict[str,str], tuple[str,...]]:
     if advanced.note:
         notes.append(advanced.note)
     iva_recognized = identify_record_iva(record).basis
-    if iva_recognized == "Por confirmar":
+    iva_status=identify_record_iva(record)
+    if iva_status.source == "Indicaciones contradictorias en monto y evidencia":
+        values["iva"]="Por confirmar"
+        notes.append(
+            "IVA: hay indicaciones CONTRADICTORIAS de inclusión en la "
+            "cláusula; no se aplica ningún supuesto hasta cotejar el PDF."
+        )
+    elif iva_recognized == "Por confirmar":
         values["iva"]="Con IVA (16%)"
         notes.append(
             "IVA: SUPUESTO PROVISIONAL de la prueba; la cláusula del "
