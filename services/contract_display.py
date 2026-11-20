@@ -73,13 +73,21 @@ def short_date(raw: str) -> str:
     s = unicodedata.normalize("NFKD", text.casefold())
     s = "".join(c for c in s if not unicodedata.combining(c))
     candidates: list[date] = []
+    # Gramáticas generales de fecha, no excepciones por carpeta ni contrato.
+    # «des del mes» es una variante textual defectuosa/OCR frecuente; se
+    # acepta SOLO si día, mes y año son explícitos y forman fecha válida.
+    month_separator = (
+        r"(?:de\s+el\s+mes\s+de\s+"
+        r"|des\s+del\s+mes\s+de\s+"
+        r"|(?:de|del)\s+(?:mes\s+de\s+)?)"
+    )
+    year_suffix = r"(?:de|del)\s+(?:ano\s+(?:de\s+)?)?(\d{4})(?!\d)"
     patterns = (
         (r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)", "iso"),
         (r"(?<!\d)(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})(?!\d)", "numeric"),
-        (r"(?<!\d)(\d{1,2})\s*(?:dias?\s*)?"
-         r"(?:des\s+del\s+mes\s+de\s+|(?:de[l]?\s*)?(?:mes\s+de\s+)?)"
-         r"("+_MONTH_PATTERN+r")\s+"
-         r"(?:de|del)\s+(?:ano\s+(?:de\s+)?)?(\d{4})(?!\d)", "month"),
+        (r"(?<!\d)(\d{1,2})\s*[/.\-]\s*("+_MONTH_PATTERN+r")\s*[/.\-]\s*(\d{4})(?!\d)", "month"),
+        (r"(?<!\d)(\d{1,2})\s*(?:dias?\s*)?" + month_separator
+         + r"("+_MONTH_PATTERN+r")\s+" + year_suffix, "month"),
     )
     for pattern, kind in patterns:
         for match in re.finditer(pattern, s):
