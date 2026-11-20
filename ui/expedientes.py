@@ -762,6 +762,10 @@ def _render_bulk_analysis(
     gemini = st.secrets.get("gemini", {})
     model = gemini.get("model") or DEFAULT_MODEL
     st.caption(f"Modelo Gemini: {model}. Ningún PDF se envía hasta tu confirmación.")
+    # Restablecer confirmación ANTES de instanciar el widget en la
+    # siguiente ejecución; Streamlit prohíbe escribir su clave después.
+    if st.session_state.pop("ex_bulk_reset_approval", False):
+        st.session_state["ex_bulk_approve"] = False
     approved = st.checkbox(
         "Confirmo que deseo analizar los documentos de este bloque "
         "y que cada extracción nueva puede consumir API de Gemini.",
@@ -775,7 +779,7 @@ def _render_bulk_analysis(
         st.session_state["ex_bulk_last_run"] = _run_bulk_batch(
             tuple(batch), model,
         )
-        st.session_state["ex_bulk_approve"] = False
+        st.session_state["ex_bulk_reset_approval"] = True
         # El análisis ya actualizó Sheets; refrescar Resultados y AD-06.
         st.session_state.pop("results_portfolio", None)
         st.session_state.pop("award_limits_contracts", None)
