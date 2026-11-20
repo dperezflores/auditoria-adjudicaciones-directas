@@ -172,6 +172,10 @@ def normalized_values(record: Any) -> tuple[dict[str,str], tuple[str,...]]:
     verified = _manual(record)
     for key, value in verified.items():
         values[key] = value
+    if "iva" in verified:
+        notes = [n for n in notes if not n.startswith("IVA: SUPUESTO")]
+    if "anticipo" in verified:
+        notes = [n for n in notes if not n.startswith("Anticipo:")]
     if getattr(record,"verification",None):
         notes.append(
             "Revisión manual: se aplicaron los valores confirmados o "
