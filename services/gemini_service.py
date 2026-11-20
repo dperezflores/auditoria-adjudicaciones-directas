@@ -60,12 +60,12 @@ def extract_contract(
         # Pydantic anidado. Validación estricta de auditoría se mantiene aquí.
         parsed: Any = getattr(response, "parsed", None)
         if parsed is not None:
-            extraction = parse_contract_v2(parsed)
+            extraction = parse_contract_v2(parsed, literal_only=True)
         else:
             raw_text = getattr(response, "text", None)
             if not isinstance(raw_text, str) or not raw_text.strip():
                 raise ValueError("Gemini no devolvió una extracción JSON válida.")
-            extraction = parse_contract_v2(raw_text)
+            extraction = parse_contract_v2(raw_text, literal_only=True)
 
         usage = getattr(response, "usage_metadata", None)
         in_tokens = getattr(usage, "prompt_token_count", None)

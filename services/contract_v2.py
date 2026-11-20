@@ -20,6 +20,8 @@ from services.contract_role_rules import (
 
 
 CONTRACT_SCHEMA_V2 = "contrato-v2"
+# La API Gemini v8 devuelve 15 campos. El técnico subsiste solo en
+# la hoja histórica de 16 columnas para evitar una migración destructiva.
 
 CONTRACT_V2_FIELDS = (
     "numero_contrato",
@@ -39,6 +41,7 @@ CONTRACT_V2_FIELDS = (
     "fuente_financiamiento",
     "legislacion_citada",
 )
+CONTRACT_EXTRACTION_FIELDS = tuple(f for f in CONTRACT_V2_FIELDS if f != "representante_tecnico")
 
 FIELD_LABELS_V2 = (
     ("numero_contrato", "Número de contrato"),
@@ -127,7 +130,7 @@ class ContractExtractionV2(BaseModel):
     def fields_to_review(self) -> list[str]:
         return [
             name for name in CONTRACT_V2_FIELDS
-            if getattr(self, name).needs_review
+            if name != "representante_tecnico" and getattr(self, name).needs_review
         ]
 
     def flat_values(self) -> list[str]:
@@ -174,7 +177,7 @@ GEMINI_RESPONSE_SCHEMA_V2: dict[str, Any] = {
 }
 
 
-def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
+def parse_contract_v2(payload: dict[str, Any] | str, *, literal_only: bool = False) -> ContractExtractionV2:
     if isinstance(payload, str):
         try:
             data = json.loads(payload)
@@ -187,8 +190,8 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
     fields = data["campos"]
     persons = data["personas"]
     observations = data["observaciones"]
-    if not isinstance(fields, list) or len(fields) > len(CONTRACT_V2_FIELDS):
-        raise ValueError("Cantidad de campos del contrato inesperada.")
+    if not isinstance(fields, list) or len(fields) > (len(CONTRACT_EXTRACTION_FIELDS) if literal_only else len(CONTRACT_V2_FIELDS)):
+        raise ValueError("El prompt literal requiere exactamente 15 campos ordenados." if literal_only else "Cantidad de campos del contrato inesperada.")
     if not isinstance(persons, list) or len(persons) > 50:
         raise ValueError("Listado de personas inválido.")
     if not isinstance(observations, list) or len(observations) > 40:
@@ -210,6 +213,30 @@ def parse_contract_v2(payload: dict[str, Any] | str) -> ContractExtractionV2:
             "valor": item["valor"], "pagina": item["pagina"],
             "evidencia": item["evidencia"],
         })
+    if literal_only:
+        if list(seen) != list(CONTRACT_EXTRACTION_FIELDS):
+            raise ValueError(
+                "El prompt literal requiere exactamente 15 campos ordenados "
+                "y no solicita representante técnico."
+            )
+        # No reinterpretar ni sustituir las palabras de Gemini. En la hoja
+        # legada se deja el representante técnico vacío por compatibilidad.
+        seen["representante_tecnico"] = LiteralEvidence(valor=None)
+        issues = list(observations)
+        for key in CONTRACT_EXTRACTION_FIELDS:
+            entry = seen[key]
+            if entry.valor is not None and (
+                not entry.evidencia
+                or entry.valor not in entry.evidencia
+            ) and entry.valor != NO_APLICA_FISICA:
+                issues.append(
+                    f"{key}: el texto literal no coincide con la cita; cotejar PDF."
+                )
+        return ContractExtractionV2.model_validate({
+            **seen, "personas_participantes": persons,
+            "observaciones": issues[:40],
+        })
+
     missing = [name for name in CONTRACT_V2_FIELDS if name not in seen]
     for name in missing:
         seen[name] = LiteralEvidence(valor=None)

@@ -67,19 +67,25 @@ class ContractRecord:
     full_values: Mapping[str, str] | None = None
     participants: tuple[Mapping[str, Any], ...] = ()
     normative_scope: str = "No determinado"
+    verification: Mapping[str, Any] | None = None
+    extraction_prompt: str = ""
 
     @property
     def missing_fields(self) -> tuple[str, ...]:
         if self.full_values is not None:
             return tuple(
                 name for name in CONTRACT_V2_FIELDS
-                if not self.full_values.get(name, "").strip()
+                if not (
+                    name == "representante_tecnico"
+                    and self.extraction_prompt == "contrato-prompt-v8"
+                )
+                and not self.full_values.get(name, "").strip()
             )
         return tuple(name for name in DATA_FIELDS if not self.values.get(name, "").strip())
 
     @property
     def coverage(self) -> str:
-        length = len(CONTRACT_V2_FIELDS) if self.full_values is not None else len(DATA_FIELDS)
+        length = (15 if self.extraction_prompt=="contrato-prompt-v8" else len(CONTRACT_V2_FIELDS)) if self.full_values is not None else len(DATA_FIELDS)
         return f"{self.completeness}/{length}"
 
     @property
@@ -87,7 +93,10 @@ class ContractRecord:
         if self.source_schema == "contrato-v2":
             return (
                 "Contrato ampliado · datos incompletos"
-                if self.completeness < len(CONTRACT_V2_FIELDS)
+                if self.completeness < (
+                    15 if self.extraction_prompt=="contrato-prompt-v8"
+                    else len(CONTRACT_V2_FIELDS)
+                )
                 else "Contrato ampliado · pendiente de verificar"
             )
         if self.source_schema == "documento-schema-v1":
@@ -466,6 +475,7 @@ def prepare_contract_portfolio(
             currency=currency_group(raw["monto_contrato"]),
             signature_year=signature_year(raw["fecha_firma_contrato"]),
             source_schema="contrato-v2",
+            extraction_prompt=source["version_prompt"],
             full_values=raw,
             participants=tuple(
                 participant.model_dump(mode="json")

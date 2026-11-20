@@ -237,7 +237,7 @@ class ContractRolesV6Tests(unittest.TestCase):
         data=contract_table_rows([record])[0]
         self.assertEqual(data["Tipo de contrato"], "Precios Unitarios")
         self.assertEqual(data["Representante legal"], NO_APLICA_FISICA)
-        self.assertEqual(data["Representante técnico"], "—")
+        self.assertNotIn("Representante técnico", data)
         self.assertEqual(record.full_values["tipo_contrato"], "")
         self.assertEqual(record.full_values["representante_tecnico"],
                          "ARQ. PERSONA QUE SOLO FIRMA")
@@ -247,13 +247,13 @@ class ContractRolesV6Tests(unittest.TestCase):
         )
 
     def test_prompt_version_and_full_contract_schema_unchanged(self):
-        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v7")
+        self.assertEqual(PROMPT_VERSION, "contrato-prompt-v8")
         self.assertEqual(CONTRACT_SCHEMA_V2, "contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS), 16)
         self.assertEqual(len(CONTRACT_V2_HEADERS), 23)
         self.assertIn("por su propio derecho", PROMPT_CONTRATO)
-        self.assertIn("TERCERA/MONTO", PROMPT_CONTRATO)
-        self.assertIn("Firmar el contrato NO acredita", PROMPT_CONTRATO)
+        self.assertIn("cláusula de MONTO", PROMPT_CONTRATO)
+        self.assertIn("TESTIGOS", PROMPT_CONTRATO)
 
 
 if __name__ == "__main__":

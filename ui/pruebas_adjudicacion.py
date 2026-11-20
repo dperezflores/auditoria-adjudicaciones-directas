@@ -13,7 +13,9 @@ from services.award_limits import (
     Catalog, LimitsError, PILOT_MUNICIPALITY, evaluate,
     infer_regime, money, read_drive_catalog, year_from_date,
 )
-from services.contract_portfolio import read_contract_portfolio
+from services.contract_verifications import read_verified_portfolio
+from services.contract_normalization import normalized_values, verified_fields
+from ui.contract_verification import render_verification_form
 from services.amount_iva import identify_record_iva
 from services.drive_service import create_drive_client, is_configured
 from services.sheets_service import create_sheets_client, storage_configured
@@ -40,7 +42,7 @@ def _load_catalog() -> Catalog:
 
 def _load_contracts():
     sheets = create_sheets_client(dict(st.secrets["gcp_service_account"]))
-    return read_contract_portfolio(sheets, st.secrets["storage"]["spreadsheet_id"])
+    return read_verified_portfolio(sheets, st.secrets["storage"]["spreadsheet_id"])
 
 
 def render_award_tests() -> None:
@@ -107,8 +109,16 @@ def render_award_tests() -> None:
     rows = []
     for record, result in evaluations:
         limit = result.row
+        normalized,_=normalized_values(record)
+        selected_iva = identify_record_iva(record).basis
+        review=record.verification or {}
+        source_iva = (
+            "Revisión guardada" if "iva" in verified_fields(record)
+            else "Supuesto 16% incluido" if selected_iva=="Por confirmar"
+            else "Texto del contrato"
+        )
         rows.append({
-            "Obra": record.nombre_carpeta,
+            "Carpeta": record.nombre_carpeta,
             "Contrato": record.values.get("numero_contrato") or record.documento,
             "Año": result.year or "—",
             "Régimen": result.regime,
@@ -119,14 +129,18 @@ def render_award_tests() -> None:
                 if limit else f"{PILOT_MUNICIPALITY} / —"
             ),
             "Modalidad": result.method,
-            "Monto extraído": money(result.gross),
-            "IVA del importe": identify_record_iva(record).basis,
+            "Fecha de firma": normalized.get("fecha_firma_contrato") or "—",
+            "Anticipo": normalized.get("anticipo") or "—",
+            "Monto contractual": money(result.gross),
+            "IVA del importe": result.iva,
+            "Origen del IVA": source_iva,
             "Monto comparable sin IVA": money(result.net),
             "Límite AD": money(limit.ad_max) if limit else "—",
             "Límite LS": money(limit.ls_max) if limit else "—",
             "Hoja utilizada": limit.sheet if limit else "Sin determinar",
             "Decreto": limit.decree if limit else "—",
             "Resultado": result.state,
+            "Estado de verificación": review.get("estado_revision") or "Sin guardar",
         })
     df = pd.DataFrame(rows)
     totals = df["Resultado"].value_counts()
@@ -142,107 +156,83 @@ def render_award_tests() -> None:
         mime="text/csv", key="award_limits_csv",
     )
 
-    st.markdown("### Revisar un contrato y confirmar sus datos")
-    positions = list(range(len(evaluations)))
-    chosen = st.selectbox(
-        "Contrato", positions, key="award_limits_selected_contract",
+    st.markdown("### Cotejo de un contrato y guardado de la verificación")
+    positions=list(range(len(evaluations)))
+    chosen=st.selectbox(
+        "Contrato",positions,key="award_limits_selected_contract",
         format_func=lambda pos: (
             evaluations[pos][0].nombre_carpeta + " · "
-            + (evaluations[pos][0].values.get("numero_contrato") or
-               evaluations[pos][0].documento)
+            + (evaluations[pos][0].values.get("numero_contrato")
+               or evaluations[pos][0].documento)
         ),
     )
-    record, automatic = evaluations[chosen]
-    values = record.full_values or {}
-    if not values:
-        st.warning(
-            "La extracción es anterior a contrato-v2: no contiene todos los datos "
-            "para determinar legislación y fuente de financiamiento. "
-            "El resultado se mantiene pendiente de revisión."
-        )
-    detected = infer_regime(values.get("legislacion_citada",""),
-                            values.get("fuente_financiamiento",""))
-    default_regime = detected if detected in ("Municipal","Estatal") else "Por confirmar"
-    options = ["Por confirmar","Municipal","Estatal"]
-    left, middle, right = st.columns(3)
-    with left:
-        regime = st.selectbox(
-            "Régimen normativo para cotejo", options,
-            index=options.index(default_regime),
-            key=f"limits_regime_{record.documento_id}",
-            help="Confirmar contra la legislación citada, origen del recurso y expediente.",
-        )
-        actual_year = year_from_date(values.get("fecha_firma_contrato",""))
-        years = ["Sin identificar", *range(2021,2027)]
-        year = st.selectbox(
-            "Ejercicio aplicable", years,
-            index=years.index(actual_year) if actual_year in years else 0,
-            key=f"limits_year_{record.documento_id}",
-            help="Por defecto usa el año de firma. Verifica el ejercicio normativo "
-                 "del procedimiento, especialmente si la adjudicación y firma difieren.",
-        )
-    with middle:
-        st.markdown(f"**Municipio de revisión:** {PILOT_MUNICIPALITY}, Guanajuato")
-        st.caption(
-            "Fijo para todos los contratos de este piloto. "
-            "Su grupo A/B/C se obtiene del catálogo en el año seleccionado "
-            "cuando el régimen es municipal."
-        )
-        iva_status = identify_record_iva(record)
-        iva_detected = iva_status.basis
-        iva_options = ["Por confirmar", "Con IVA (16%)", "Sin IVA"]
-        iva = st.selectbox(
-            "Tratamiento del monto extraído", iva_options,
-            index=iva_options.index(iva_detected), key=f"limits_iva_evidencia_{record.cache_key}",
-            help="Los umbrales del XLSX están sin IVA; confirma este dato con el contrato.",
-        )
-    with right:
-        st.write("**Datos literales del contrato**")
-        st.caption("Legislación citada: " + (values.get("legislacion_citada") or "No localizada"))
-        st.caption("Recurso: " + (values.get("fuente_financiamiento") or "No localizado"))
-        st.caption("Firma: " + (values.get("fecha_firma_contrato") or "No localizada"))
-        st.caption("Monto: " + (values.get("monto_contrato") or "No localizado"))
-        st.markdown("**IVA del importe contractual (detección documental)**")
-        st.caption(
-            f"{iva_status.basis} · {iva_status.source}"
-            + (f" · Página {iva_status.page}" if iva_status.page else "")
-        )
-        if iva_status.quote and iva_status.source == "Evidencia de la cláusula del monto":
-            st.caption("Cita textual del monto: " + iva_status.quote)
-        st.caption("Objeto: " + (values.get("obra_servicio") or "No localizado"))
-
-    manual = evaluate(
-        record, catalog, regime=regime,
-        iva=iva, year=year if isinstance(year,int) else None,
+    record, automatic=evaluations[chosen]
+    values=record.full_values or {}
+    normalized,notes=normalized_values(record)
+    original_iva=identify_record_iva(record)
+    st.caption(
+        "Carpeta: "+record.nombre_carpeta+" · Municipio fijo de este piloto: "
+        +PILOT_MUNICIPALITY
     )
-    st.markdown("#### Resultado detallado")
-    if manual.state == "Excede el límite":
-        st.error(manual.state + " · " + manual.message)
-    elif manual.state == "Requiere revisión":
-        st.warning(manual.state + " · " + manual.message)
+    render_verification_form(record,prefix="ad06")
+    st.markdown("#### Resultado detallado vigente")
+    if automatic.state=="Excede el límite":
+        st.error(automatic.state+" · "+automatic.message)
+    elif automatic.state=="Requiere revisión":
+        st.warning(automatic.state+" · "+automatic.message)
     else:
-        st.success(manual.state + " · " + manual.message)
-    if manual.row:
-        r = manual.row
+        st.success(automatic.state+" · "+automatic.message)
+    st.caption(
+        "Modalidad normalizada: "+automatic.method+
+        " · Anticipo: "+str(normalized.get("anticipo") or "—")+
+        " · IVA considerado: "+automatic.iva
+    )
+    if original_iva.basis=="Por confirmar" and "iva" not in verified_fields(record):
+        st.warning(
+            "IVA aplicado por SUPUESTO: 16 % incluido. No consta una "
+            "aclaración fiscal inequívoca. Usa el formulario de verificación "
+            "para confirmar o corregir el tratamiento y guarda tu sustento."
+        )
+    if automatic.row:
+        r=automatic.row
         st.table({
             "Dato": ["Tabla aplicada","Ejercicio","Municipio","Grupo","Modalidad",
-                     "Importe comparado SIN IVA","AD hasta","LS desde","LS hasta",
-                     "LP desde","Decreto","Artículo","Referencia poblacional","Clave normativa"],
-            "Valor": [r.sheet,str(r.year),r.municipality or "No aplica",r.group or "No aplica",
-                      manual.method,money(manual.net),money(r.ad_max),money(r.ls_min),
-                      money(r.ls_max),money(r.lp_min),r.decree,r.article or "—",
-                      r.population or "—",r.key],
+                     "Anticipo normalizado","Importe contractual",
+                     "Importe comparable SIN IVA","AD hasta","LS desde","LS hasta",
+                     "LP desde","Decreto","Artículo","Referencia poblacional",
+                     "Clave normativa"],
+            "Valor": [
+                r.sheet,str(r.year),r.municipality or PILOT_MUNICIPALITY,
+                r.group or "No aplica",automatic.method,
+                normalized.get("anticipo") or "—",
+                money(automatic.gross),money(automatic.net),
+                money(r.ad_max),money(r.ls_min),money(r.ls_max),money(r.lp_min),
+                r.decree,r.article or "—",r.population or "—",r.key,
+            ],
         })
-        if manual.margin is not None:
-            st.caption("Margen respecto del máximo aplicable: " + money(manual.margin))
+        if automatic.margin is not None:
+            st.caption("Margen respecto del máximo aplicable: "+money(automatic.margin))
         _source_link(r.url)
-    if manual.warnings:
-        st.caption("Aspectos pendientes de confirmar: " + " · ".join(manual.warnings))
+    if automatic.warnings:
+        st.caption("Advertencias: "+" · ".join(automatic.warnings))
+    with st.expander("Datos literales de la extracción (sin normalizar)"):
+        for label,key in (
+            ("Legislación citada","legislacion_citada"),
+            ("Fuente de recursos","fuente_financiamiento"),
+            ("Fecha de firma","fecha_firma_contrato"),
+            ("Monto contractual","monto_contrato"),
+            ("Anticipo","anticipo"),
+            ("Objeto","obra_servicio"),
+        ):
+            st.write(f"**{label}:** {values.get(key) or 'No localizado'}")
+        st.caption(
+            "IVA según la evidencia literal: "+original_iva.basis+
+            " · "+original_iva.source
+        )
     st.caption(
-        "Las selecciones de revisión son temporales y NO modifican los documentos "
-        "ni los campos extraídos en la base. La tabla general aprovecha el "
-        "IVA detectado en el valor o en la evidencia de la cláusula contractual "
-        "sin necesidad de volver a analizar PDF."
+        "Las verificaciones se guardan por versión de contrato y están "
+        "disponibles en Resultados y AD-06. El texto literal original y "
+        "las evidencias del PDF no se sustituyen."
     )
     st.divider()
     with st.expander("Otras cinco pruebas de adjudicación (planeadas)"):

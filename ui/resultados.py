@@ -23,13 +23,15 @@ from services.document_export import (
 )
 from services.contract_v2 import FIELD_LABELS_V2
 from services.contract_table import contract_table_rows
+from services.contract_verifications import read_verified_portfolio
+from ui.contract_verification import render_verification_form
 from services.contract_role_rules import record_representation_fields, suggested_display_type, _person_name, fold
 from ui.document_crosscheck import render_document_crosscheck
 
 
 def _fetch_portfolio() -> None:
     client = create_sheets_client(st.secrets["gcp_service_account"])
-    st.session_state["results_portfolio"] = read_contract_portfolio(
+    st.session_state["results_portfolio"] = read_verified_portfolio(
         client, st.secrets["storage"]["spreadsheet_id"]
     )
     st.session_state["results_last_read"] = (
@@ -99,6 +101,7 @@ def _render_aggregate_visuals(records: tuple[ContractRecord, ...]) -> None:
 def _render_details(record: ContractRecord) -> None:
     """Ficha reactiva al seleccionar una fila del listado contractual."""
     st.markdown("### Ficha del contrato seleccionado")
+    render_verification_form(record,prefix="results")
     st.write(record.values["nombre_obra"] or "Obra o servicio no localizado")
     st.caption(
         f"Número: {record.values['numero_contrato'] or 'No localizado'} · "
@@ -118,6 +121,10 @@ def _render_details(record: ContractRecord) -> None:
                     {"Dato": label, "Texto literal del contrato": record.full_values.get(key) or "No localizado"}
                     for key, label in FIELD_LABELS_V2
                     if key not in ("legislacion_citada", "fuente_financiamiento")
+                    and not (
+                        key == "representante_tecnico"
+                        and record.extraction_prompt == "contrato-prompt-v8"
+                    )
                 ]),
                 hide_index=True, use_container_width=True,
                 column_config={
@@ -154,8 +161,7 @@ def _render_details(record: ContractRecord) -> None:
                     "Clasificación para el listado, derivada de citas verificables "
                     "(no sustituye los literales almacenados): "
                     f"tipo de contrato: {type_view}; "
-                    f"representante legal: {legal_view or 'No acreditado'}; "
-                    f"representante técnico: {technical_view or 'No acreditado'}."
+                    f"representante legal: {legal_view or 'No acreditado'}."
                 )
         if record.missing_fields:
             labels = dict(FIELD_LABELS_V2) if record.full_values else dict(FIELD_LABELS)
@@ -172,18 +178,10 @@ def _render_details(record: ContractRecord) -> None:
                 "La lista incluye testigos y servidores públicos; firmar "
                 "el contrato no acredita representación técnica de la empresa."
             )
-            _, accredited_technical = record_representation_fields(record)
             st.dataframe(pd.DataFrame([
                 {
                     "Nombre (literal)": row.get("nombre") or "",
                     "Cargo o carácter (literal)": row.get("cargo_o_caracter") or "No localizado",
-                    "Representación técnica de la contratista": (
-                        "Acreditada" if (
-                            accredited_technical
-                            and _person_name(row.get("nombre"))
-                            == _person_name(accredited_technical)
-                        ) else "No acreditada"
-                    ),
                     "Carácter de testigo": (
                         "Testigo (cita explícita)" if "testigos" in fold(
                             row.get("evidencia") or ""
@@ -218,7 +216,11 @@ def _render_details(record: ContractRecord) -> None:
             "La evidencia y el número de página son referencias propuestas por IA. "
             "Los textos se conservan sin normalizar."
         )
-        fields = FIELD_LABELS_V2 if record.full_values is not None else FIELD_LABELS
+        fields = (
+            tuple((k,l) for k,l in FIELD_LABELS_V2
+                  if k!="representante_tecnico" or record.extraction_prompt!="contrato-prompt-v8")
+            if record.full_values is not None else FIELD_LABELS
+        )
         details = []
         for field, label in fields:
             source = record.evidence.get(field) or {}
@@ -361,13 +363,17 @@ def render_results() -> None:
     )
 
     st.markdown("#### Listado de obras y contratos")
-    st.caption("Versión de vista: monto único v2 · Sin cálculos de IVA")
+    if st.session_state.pop("verification_saved_notice",None):
+        st.success("Se guardó la verificación. Se actualizaron los datos de la tabla.")
+    st.caption("Vista normalizada · Anticipo en porcentaje · IVA identificado o supuesto provisional")
     st.caption(
         f"{len(filtered)} contrato(s) en el conjunto filtrado. "
-        "Las modalidades y las fechas se muestran normalizadas (DD/MM/AAAA). "
-        "El importe contractual aparece en una sola columna con formato moneda, "
-        "tal como fue extraído, sin cálculos adicionales. "
-        "Desplázate horizontalmente y selecciona una fila para ver el texto original."
+        "Modalidades, tipo, anticipo y fechas se muestran normalizados; "
+        "el importe mantiene su valor contractual (con formato moneda). "
+        "El IVA se identifica documentalmente o se etiqueta como supuesto "
+        "provisional cuando no consta. Las revisiones guardadas por el auditor "
+        "se aplican a esta vista y a AD-06. "
+        "Selecciona una fila para consultar los literales originales."
     )
     st.caption(
         "La normalización es únicamente visual y no modifica los datos extraídos. "

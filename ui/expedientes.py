@@ -146,17 +146,26 @@ def _summarize_saved(
                         "Evidencia": getattr(result, name).evidencia or "Sin evidencia",
                     }
                     for name, label in FIELD_LABELS_V2
+                    if old.get("version_prompt") != PROMPT_VERSION
+                    or name != "representante_tecnico"
                 ]), hide_index=True, use_container_width=True)
                 iva_amount = identify_contract_amount_iva(
                     result.monto_contrato.valor or "",
                     evidence=result.monto_contrato.evidencia or "",
                     page=result.monto_contrato.pagina,
                 )
-                st.caption(
-                    "Tratamiento del IVA del importe contractual: "
-                    + iva_amount.basis + " · " + iva_amount.source
-                    + (f" · Página {iva_amount.page}" if iva_amount.page else "")
-                )
+                if old.get("version_prompt") != PROMPT_VERSION:
+                    st.caption(
+                        "Indicador derivado (no literal): IVA "
+                        + iva_amount.basis + " · " + iva_amount.source
+                        + (f" · Página {iva_amount.page}" if iva_amount.page else "")
+                    )
+                else:
+                    st.caption(
+                        "Vista literal de los 15 campos extraídos. "
+                        "La normalización, IVA supuesto y verificaciones "
+                        "se muestran en Resultados y AD-06."
+                    )
                 if result.personas_participantes:
                     st.markdown("**Personas que participan en el contrato**")
                     st.dataframe(pd.DataFrame([

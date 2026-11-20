@@ -79,12 +79,12 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(row["Fecha de término contractual"], "30/09/2026")
         self.assertEqual(row["Fecha de firma del contrato"], "04/05/2026")
         self.assertEqual(row["Monto del contrato"], "$1,234,567.89")
-        self.assertEqual(row["Anticipo"], "30.00%")
+        self.assertEqual(row["Anticipo"], "30%")
         self.assertEqual(
             [col for col in row if col.startswith("Monto del contrato")],
             ["Monto del contrato"],
         )
-        self.assertFalse(any("IVA" in col for col in row))
+        self.assertEqual(row["IVA del importe"], "Con IVA (16%)")
         self.assertNotIn("Campos extraídos", row)
         self.assertNotIn("Estado de extracción", row)
         self.assertEqual(row["Legislación citada en el contrato"],
@@ -106,7 +106,7 @@ class ContractTableTests(unittest.TestCase):
         self.assertEqual(row["Número de contrato"], "  A-001/2026  ")
         self.assertEqual(row["Registro PUC"] if "Registro PUC" in row else
                          row["Número de registro PUC"], "—")
-        self.assertEqual(row["Representante técnico"], "—")
+        self.assertNotIn("Representante técnico", row)
         self.assertEqual(row["Personas que participan en el contrato"], "—")
         self.assertEqual(row["Ámbito normativo preliminar"], "No determinado (versión anterior)")
         self.assertEqual(row["Monto del contrato"], "$1,234,567.89")

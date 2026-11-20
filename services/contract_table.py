@@ -1,100 +1,68 @@
-"""Tabla de Resultados normalizada; los literales originales siguen en la ficha.
-
-No modifica los archivos, el JSON de extracción ni la base de datos.
-"""
+"""Presentación normalizada del listado. No modifica la extracción original."""
 from __future__ import annotations
 
 from typing import Any, Sequence
-
 from services.contract_portfolio import ContractRecord
 from services.contract_v2 import FIELD_LABELS_V2
-from services.contract_role_rules import (
-    record_representation_fields, suggested_display_type,
-)
-from services.contract_display import (
-    format_contract_amount, normalize_award_method, normalize_contract_type, short_date,
-)
-
-
-_LEGACY_MAP = {
-    "numero_contrato": "numero_contrato",
-    "obra_servicio": "nombre_obra",
-    "contratista": "contratista",
-    "monto_contrato": "monto_con_iva",
-    "fecha_inicio_contractual": "fecha_inicio",
-    "fecha_termino_contractual": "fecha_termino",
-    "fecha_firma_contrato": "fecha_firma",
-    "anticipo": "porcentaje_anticipo",
-}
+from services.contract_normalization import normalized_values
+from services.amount_iva import identify_record_iva
 
 
 def participant_cell(people: Sequence[dict[str, Any]]) -> str:
-    """Resumir todos los participantes en UNA celda, sin alterar sus textos."""
-    entries = []
+    entries=[]
     for person in people:
-        name = person.get("nombre")
-        if not isinstance(name, str) or not name:
+        name=person.get("nombre")
+        if not isinstance(name,str) or not name:
             continue
-        parts = [name]
-        role = person.get("cargo_o_caracter")
-        if isinstance(role, str) and role:
-            parts.append(f"Cargo: {role}")
-        represented = person.get("representacion")
-        if isinstance(represented, str) and represented:
-            parts.append(f"Representa a: {represented}")
+        parts=[name]
+        if person.get("cargo_o_caracter"):
+            parts.append(f"Cargo: {person['cargo_o_caracter']}")
+        if person.get("representacion"):
+            parts.append(f"Representa a: {person['representacion']}")
         entries.append(" | ".join(parts))
     return "; ".join(entries) if entries else "—"
 
 
-def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str, str]]:
-    rows = []
+def contract_table_rows(records: Sequence[ContractRecord]) -> list[dict[str,str]]:
+    result=[]
     for record in records:
-        source = record.full_values
-        # Los originales siguen disponibles en la ficha y en Evidencias del PDF.
-        # Los derivados de esta vista no alteran DatosContratoV2.
-        values = (
-            {key: source.get(key) or "" for key, _ in FIELD_LABELS_V2}
-            if source is not None
-            else {
-                key: record.values.get(_LEGACY_MAP.get(key, ""), "")
-                for key, _ in FIELD_LABELS_V2
-            }
+        norm, notes = normalized_values(record)
+        review=record.verification or {}
+        row={"Carpeta":record.nombre_carpeta}
+        for key,label in FIELD_LABELS_V2:
+            # El dato técnico ya no se extrae; las extracciones anteriores
+            # permanecen accesibles por su JSON / Evidencias originales.
+            if key == "representante_tecnico":
+                continue
+            row[label]=norm.get(key) or "—"
+        row["IVA del importe"] = norm["iva"]
+        original_iva=identify_record_iva(record)
+        review_fields=(record.verification or {}).get("campos") or {}
+        row["Origen del IVA"] = (
+            "Confirmado por auditor" if "iva" in review_fields
+            else "Supuesto provisional (sin evidencia explícita)"
+            if original_iva.basis=="Por confirmar" and (
+                original_iva.source!="Indicaciones contradictorias en monto y evidencia"
+            )
+            else "Citas contradictorias; revisar"
+            if original_iva.source=="Indicaciones contradictorias en monto y evidencia"
+            else "Expresamente documentado"
         )
-        row: dict[str, str] = {}
-        legal_view, technical_view = record_representation_fields(record)
-        amount_evidence = (
-            (record.evidence.get("monto_contrato") or {}).get("evidencia") or ""
-            if source is not None else ""
-        )
-        for key, label in FIELD_LABELS_V2:
-            literal = values[key]
-            if key == "monto_contrato":
-                row[label] = format_contract_amount(literal, record.currency)
-            elif key == "tipo_contrato":
-                row[label] = (
-                    suggested_display_type(
-                        literal, values.get("monto_contrato") or "", amount_evidence,
-                    ) if source is not None else normalize_contract_type(literal)
-                )
-            elif key == "representante_legal" and source is not None:
-                row[label] = legal_view or "—"
-            elif key == "representante_tecnico" and source is not None:
-                row[label] = technical_view or "—"
-            elif key == "modalidad_adjudicacion":
-                row[label] = normalize_award_method(literal)
-            elif key in ("fecha_firma_contrato", "fecha_inicio_contractual",
-                         "fecha_termino_contractual"):
-                row[label] = short_date(literal)
-            else:
-                row[label] = literal if literal else "—"
-        row["Personas que participan en el contrato"] = participant_cell(
+        row["Personas que participan en el contrato"]=participant_cell(
             record.participants
         )
         row["Ámbito normativo preliminar"] = (
-            record.normative_scope if source is not None else "No determinado (versión anterior)"
+            "No determinado (versión anterior)" if record.full_values is None
+            else norm["regimen"] or record.normative_scope
         )
-        row["Observaciones de extracción"] = (
-            " | ".join(record.observations) if record.observations else "—"
+        row["Estado de verificación"] = (
+            review.get("estado_revision") or "Sin verificación guardada"
         )
-        rows.append(row)
-    return rows
+        explanations=list(record.observations)+list(notes)
+        if review.get("observaciones"):
+            explanations.append(
+                "Verificación del auditor: "+review["observaciones"]
+            )
+        row["Observaciones de extracción"] = " | ".join(explanations) if explanations else "—"
+        result.append(row)
+    return result

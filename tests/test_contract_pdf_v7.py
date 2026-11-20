@@ -126,7 +126,7 @@ class ContractPdfV7Tests(unittest.TestCase):
                     })
         self.assertEqual(record_representation_fields(row)[1],"")
         display=contract_table_rows([row])[0]
-        self.assertEqual(display["Representante técnico"],"—")
+        self.assertNotIn("Representante técnico",display)
         self.assertIn(CASE_NAME,display["Personas que participan en el contrato"])
 
     def test_marian_arreola_president_council_is_authorized_role(self):
@@ -174,11 +174,11 @@ class ContractPdfV7Tests(unittest.TestCase):
         self.assertNotIn("delete_analysis(",screen.split("def _render_contract_upgrade",1)[1].split("def _render_delete_analysis",1)[0])
 
     def test_prompt_v7_preserves_schema_and_targets_missing_tail(self):
-        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v7")
+        self.assertEqual(PROMPT_VERSION,"contrato-prompt-v8")
         self.assertEqual(CONTRACT_SCHEMA_V2,"contrato-v2")
         self.assertEqual(len(CONTRACT_V2_FIELDS),16)
-        self.assertIn("no cortes el párrafo inmediatamente después",PROMPT_CONTRATO)
-        self.assertIn("El encabezado \"CONTRATO DE SERVICIOS",PROMPT_CONTRATO)
+        self.assertIn("extiende la evidencia hasta el",PROMPT_CONTRATO)
+        self.assertIn("Modalidad ECONÓMICA",PROMPT_CONTRATO)
         self.assertIn("\"TESTIGOS\"",PROMPT_CONTRATO)
 
 
