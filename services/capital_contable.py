@@ -153,6 +153,9 @@ def read_capital_sources(client: Any, spreadsheet_id: str) -> CapitalSources:
             )
             continue
         document = docs[0]
+        if document["estado_procesamiento"] == "Modificado desde el último análisis":
+            issues[obra_id] = "El PDF del PUC cambió después de la extracción guardada."
+            continue
         key = document["resultado_id"]
         if not key:
             issues[obra_id] = "PUC localizado, pero aún no analizado."
@@ -251,6 +254,13 @@ def _historical(
 ) -> tuple[str, tuple[str, ...]]:
     """No tomar una cédula posterior como prueba retroactiva de capital."""
     warnings = []
+    registered_status = _fold(puc.estado_registro)
+    if any(word in registered_status for word in (
+        "cancelado", "suspendido", "no vigente", "vencido",
+    )):
+        return "Estado PUC no vigente o suspendido", (
+            "La propia cédula indica un estado incompatible con un registro vigente.",
+        )
     decision_date = _puc_date(reference.fecha) if reference else None
     certified_reference = bool(decision_date)
     if not decision_date:
@@ -374,6 +384,15 @@ def evaluate_capital(record: ContractRecord, sources: CapitalSources) -> Capital
         puc, reference, norm.get("fecha_firma_contrato", "")
     )
     notes.extend(hist_notes)
+    mismatched_assignment = False
+    if reference and reference.monto and base is not None:
+        assigned = parse_amount(reference.monto)
+        if assigned is not None and abs(assigned - base) > CENT:
+            mismatched_assignment = True
+            notes.append(
+                "El importe asignado del dictamen y el monto contractual "
+                "no coinciden: cotejar el monto base para calcular el 30 %."
+            )
     if norm.get("iva") == "Sin IVA":
         notes.append(
             "El importe contractual está expresado sin IVA: para este cálculo se "
@@ -393,6 +412,13 @@ def evaluate_capital(record: ContractRecord, sources: CapitalSources) -> Capital
         state = "Requiere revisión de identidad"
     elif required is None:
         state = "Requiere revisión de importes"
+    elif mismatched_assignment:
+        state = "Requiere revisión del monto adjudicado"
+    elif not puc.capital_evidence or puc.capital_page is None:
+        state = "Requiere revisión de evidencia del capital"
+        notes.append(
+            "El capital contable carece de página o cita literal en la extracción PUC."
+        )
     elif historical != "Vigencia documental compatible (preliminar)":
         state = "Pendiente de revisión histórica"
     else:
