@@ -1,0 +1,298 @@
+"""CC-01: cálculo y trazabilidad histórica sin PDF/Gemini/Drive."""
+from __future__ import annotations
+
+from dataclasses import replace
+from decimal import Decimal
+from pathlib import Path
+from unittest.mock import Mock
+import ast
+import unittest
+
+from services.capital_contable import (
+    AssignmentEvidence, CapitalSourceError, CapitalSources,
+    PucEntry, evaluate_capital, read_capital_sources,
+)
+from services.contract_portfolio import ContractRecord
+from services.dictamen_schema import DICTAMEN_HEADERS
+from services.extraction_store import EXTRACTION_HEADERS
+from services.puc_schema import PUC_HEADERS, parse_puc
+from services.sync_engine import HEADERS as INVENTORY_HEADERS
+from tests.test_award_limits import contract
+from tests.test_puc_schema import sample_puc
+
+
+WORK = "obraABC00001"
+DOC = "pucDOC000001"
+KEY = "pucCache000001"
+
+
+def _contract(**overrides) -> ContractRecord:
+    data={
+        "monto_contrato":"$1,000,000.00 IVA INCLUIDO",
+        "rfc":"GUGA940107FJ3",
+        "registro_puc":"GTO-SOP/PUC-5455-2023",
+        "fecha_firma_contrato":"15 de diciembre de 2025",
+    }
+    data.update(overrides)
+    return replace(contract(**data),obra_id=WORK,nombre_carpeta="009_Parque")
+
+
+def _puc(**overrides) -> PucEntry:
+    fields={
+        "obra_id":WORK,"documento_id":DOC,"cache_key":KEY,
+        "nombre":"GUTIERREZ GUTIERREZ DE VELASCO ALEJANDRO",
+        "rfc":"GUGA940107FJ3","registro":"GTO-SOP/PUC-5455-2023",
+        "capital_text":"$352,203.00","capital":Decimal("352203.00"),
+        "capital_page":1,"capital_evidence":"CAPITAL CONTABLE $352,203.00",
+        "fecha_validacion":"7 de abril de 2025",
+        "fecha_impresion":"5 de diciembre de 2025",
+        "vigencia_desde":"","vigencia_hasta":"16 de mayo de 2026",
+        "estado_registro":"REFRENDADO","version":"puc-prompt-v1",
+    }
+    fields.update(overrides)
+    return PucEntry(**fields)
+
+
+def _sources(puc: PucEntry | None = None, *, date: str = "10 de diciembre de 2025",
+             issued_amount: str = "$1,000,000.00") -> CapitalSources:
+    return CapitalSources(
+        puc_by_work={WORK:puc} if puc is not None else {},
+        issues_by_work={},
+        assignments={
+            WORK:AssignmentEvidence(
+                fecha=date,fuente="Dictamen AD (fecha preliminar)",
+                monto=issued_amount,
+            )
+        } if date else {},
+    )
+
+
+def _flat(headers, fields):
+    return [fields.get(name,"") for name in headers]
+
+
+def _sheets_fixture(*, analyzed=True, duplicate=False, changed=False,
+                    invalid_json=False, with_dictamen=True):
+    puc=parse_puc(sample_puc())
+    docs=[]
+    docs.append(_flat(INVENTORY_HEADERS["Documentos"],{
+        "documento_id":DOC,"obra_id":WORK,"nombre_archivo":"PUC.pdf",
+        "tipo_documental":"PUC","mime_type":"application/pdf",
+        "md5_checksum":"hash123","activo":"SI",
+        "estado_procesamiento":("Modificado desde el último análisis" if changed
+                                else "Analizado"),
+        "resultado_id":KEY if analyzed else "",
+    }))
+    if duplicate:
+        docs.append(_flat(INVENTORY_HEADERS["Documentos"],{
+            "documento_id":"otherPUC00001","obra_id":WORK,
+            "nombre_archivo":"PUC.pdf","tipo_documental":"PUC",
+            "mime_type":"application/pdf","activo":"SI",
+        }))
+    extra=[_flat(EXTRACTION_HEADERS,{
+        "cache_key":KEY,"obra_id":WORK,"documento_id":DOC,
+        "version_esquema":"puc-v1","version_prompt":"puc-prompt-v1",
+        "estado":"COMPLETADO",
+        "resultado_json":("{broken" if invalid_json else puc.model_dump_json()),
+    })]
+    flat_puc=[_flat(PUC_HEADERS,{
+        "cache_key":KEY,"obra_id":WORK,"documento_id":DOC,
+        **dict(zip([
+            "contratista","rfc","numero_registro_puc","capital_contable",
+        ],[
+            puc.contratista.valor,puc.rfc.valor,puc.numero_registro_puc.valor,
+            puc.capital_contable.valor,
+        ])),
+    })]
+    dict_data=[]
+    if with_dictamen:
+        dd="dictamenDOC0001"; kk="dictamenCache0001"
+        docs.append(_flat(INVENTORY_HEADERS["Documentos"],{
+            "documento_id":dd,"obra_id":WORK,
+            "nombre_archivo":"DICTAMEN_AD.pdf","tipo_documental":"DICTAMEN_AD",
+            "activo":"SI","resultado_id":kk,
+        }))
+        extra.append(_flat(EXTRACTION_HEADERS,{
+            "cache_key":kk,"obra_id":WORK,"documento_id":dd,
+            "version_esquema":"dictamen-ad-v1","estado":"COMPLETADO",
+            "resultado_json":'{"saved":true}',
+        }))
+        dict_data.append(_flat(DICTAMEN_HEADERS,{
+            "cache_key":kk,"obra_id":WORK,"documento_id":dd,
+            "fecha_emision":"10 de diciembre de 2025",
+            "monto_asignado":"$1,000,000.00",
+        }))
+    return [
+        [list(INVENTORY_HEADERS["Documentos"]),*docs],
+        [list(EXTRACTION_HEADERS),*extra],
+        [list(PUC_HEADERS),*flat_puc],
+        [list(DICTAMEN_HEADERS),*dict_data],
+    ]
+
+
+class CapitalContableTests(unittest.TestCase):
+    def test_capital_above_30_and_valid_preliminary_puc(self):
+        r=evaluate_capital(_contract(),_sources(_puc()))
+        self.assertEqual(r.requirement,Decimal("300000.00"))
+        self.assertEqual(r.capital,Decimal("352203.00"))
+        self.assertEqual(r.difference,Decimal("52203.00"))
+        self.assertEqual(r.comparison,"Cubre el 30%")
+        self.assertEqual(r.coverage,Decimal("35.22"))
+        self.assertEqual(r.state,"Cubre el 30% (preliminar)")
+        self.assertIn("compatible",r.historical)
+
+    def test_capital_less_than_30_is_detected_not_falsely_approved(self):
+        r=evaluate_capital(_contract(),_sources(
+            _puc(capital=Decimal("299999.99"))
+        ))
+        self.assertEqual(r.difference,Decimal("-0.01"))
+        self.assertEqual(r.comparison,"Capital inferior al 30%")
+        self.assertEqual(r.state,"Capital inferior al 30% (preliminar)")
+
+    def test_30_percent_uses_total_not_net_after_iva(self):
+        r=evaluate_capital(_contract(),_sources(_puc()))
+        self.assertEqual(r.requirement,Decimal("300000.00"))
+        # Si se dividiera erróneamente entre 1.16 sería ≈258,620.69.
+        self.assertNotEqual(r.requirement,Decimal("258620.69"))
+
+    def test_no_puc_not_misidentified_as_failure(self):
+        r=evaluate_capital(_contract(),_sources())
+        self.assertEqual(r.state,"Pendiente de PUC")
+        self.assertIsNone(r.requirement)
+        self.assertIsNone(r.capital)
+        self.assertIn("No existe PUC",r.notes[-1])
+
+    def test_other_procedures_do_not_use_direct_award_manual(self):
+        for mode in ("LICITACIÓN SIMPLIFICADA","LICITACIÓN PÚBLICA"):
+            r=evaluate_capital(_contract(modalidad_adjudicacion=mode),_sources(_puc()))
+            self.assertEqual(r.state,"No aplica")
+            self.assertIsNone(r.requirement)
+
+    def test_unknown_method_does_not_assume_direct_award(self):
+        r=evaluate_capital(_contract(modalidad_adjudicacion=""),_sources(_puc()))
+        self.assertEqual(r.state,"Requiere revisión")
+        self.assertEqual(r.historical,"Modalidad no identificada")
+
+    def test_after_award_puc_print_is_historical_pending(self):
+        r=evaluate_capital(_contract(),_sources(_puc(
+            fecha_impresion="16 de diciembre de 2025",
+        )))
+        self.assertEqual(r.comparison,"Cubre el 30%")
+        self.assertEqual(r.state,"Pendiente de revisión histórica")
+        self.assertIn("impreso después",r.historical)
+
+    def test_after_award_puc_validation_is_pending(self):
+        r=evaluate_capital(_contract(),_sources(_puc(
+            fecha_validacion="20 de diciembre de 2025",
+        )))
+        self.assertEqual(r.state,"Pendiente de revisión histórica")
+        self.assertIn("validado después",r.historical)
+
+    def test_puc_expired_or_suspended_is_pending(self):
+        for puc in (
+            _puc(vigencia_hasta="1 de diciembre de 2025"),
+            _puc(estado_registro="SUSPENDIDO"),
+        ):
+            r=evaluate_capital(_contract(),_sources(puc))
+            self.assertEqual(r.state,"Pendiente de revisión histórica")
+
+    def test_missing_dictamen_uses_contract_date_only_as_reference(self):
+        r=evaluate_capital(_contract(),_sources(_puc(),date=""))
+        self.assertEqual(r.state,"Pendiente de revisión histórica")
+        self.assertIn("Pendiente de acreditar",r.historical)
+        self.assertTrue(any("firma como referencia" in n for n in r.notes))
+
+    def test_mismatched_rfc_and_registration_require_cotejo(self):
+        for revised in (
+            _contract(rfc="OTRO020202AB1"),
+            _contract(registro_puc="GTO-SOP/PUC-0000-2023"),
+        ):
+            r=evaluate_capital(revised,_sources(_puc()))
+            self.assertEqual(r.state,"Requiere revisión de identidad")
+            self.assertEqual(r.comparison,"Cubre el 30%")
+
+    def test_unparseable_or_foreign_amounts_stay_undetermined(self):
+        for raw in ("$10,000.00 Y $9,000.00","USD 1,000,000.00"):
+            r=evaluate_capital(_contract(monto_contrato=raw),_sources(_puc()))
+            self.assertEqual(r.state,"Requiere revisión de importes")
+            self.assertIsNone(r.requirement)
+
+    def test_duplicate_puc_is_not_chosen_arbitrarily(self):
+        tables=_sheets_fixture(duplicate=True)
+        client=Mock()
+        client.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value={
+            "valueRanges":[{"values":v} for v in tables],
+        }
+        sources=read_capital_sources(client,"sheet_id")
+        self.assertNotIn(WORK,sources.puc_by_work)
+        self.assertIn("varios",sources.issues_by_work[WORK])
+
+    def test_current_puc_and_dictamen_read_by_full_cache_identity(self):
+        client=Mock()
+        tables=_sheets_fixture()
+        client.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value={
+            "valueRanges":[{"values":v} for v in tables],
+        }
+        src=read_capital_sources(client,"sheet_id")
+        self.assertEqual(src.puc_by_work[WORK].capital,Decimal("352203.00"))
+        self.assertEqual(src.puc_by_work[WORK].capital_page,1)
+        self.assertEqual(src.assignments[WORK].fecha,"10 de diciembre de 2025")
+        args=client.spreadsheets.return_value.values.return_value.batchGet.call_args.kwargs
+        self.assertEqual(len(args["ranges"]),4)
+
+    def test_puc_not_analyzed_or_modified_does_not_use_historical_data(self):
+        for kwargs in ({"analyzed":False},{"changed":True},{"invalid_json":True}):
+            with self.subTest(kwargs=kwargs):
+                client=Mock()
+                tables=_sheets_fixture(**kwargs)
+                client.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value={
+                    "valueRanges":[{"values":v} for v in tables],
+                }
+                sources=read_capital_sources(client,"sheet_id")
+                self.assertNotIn(WORK,sources.puc_by_work)
+                self.assertIn(WORK,sources.issues_by_work)
+
+    def test_mismatched_assignment_amount_flags_inconsistent_basis(self):
+        r=evaluate_capital(_contract(),_sources(
+            _puc(),issued_amount="$900,000.00"
+        ))
+        self.assertEqual(r.state,"Requiere revisión del monto adjudicado")
+        self.assertTrue(any("no coinciden" in n for n in r.notes))
+
+    def test_missing_capital_evidence_requires_cotejo(self):
+        r=evaluate_capital(_contract(),_sources(
+            _puc(capital_page=None,capital_evidence="")
+        ))
+        self.assertEqual(r.state,"Requiere revisión de evidencia del capital")
+
+    def test_saved_verification_changes_amount_without_rewriting_extraction(self):
+        rec=_contract()
+        confirmed=replace(rec,verification={
+            "campos":{"monto_contrato":"$1,100,000.00"},
+            "estado_revision":"Confirmado","observaciones":"Cotejo del contrato",
+        })
+        r=evaluate_capital(confirmed,_sources(
+            _puc(),issued_amount="$1,100,000.00",
+        ))
+        self.assertEqual(r.requirement,Decimal("330000.00"))
+        self.assertEqual(r.comparison,"Cubre el 30%")
+        self.assertEqual(rec.full_values["monto_contrato"],"$1,000,000.00 IVA INCLUIDO")
+
+    def test_tabs_keep_existing_limits_and_render_capital_without_gemini(self):
+        base=Path(__file__).resolve().parents[1]
+        screen=(base/"ui"/"pruebas_adjudicacion.py").read_text(encoding="utf-8")
+        capital=(base/"ui"/"capital_contable.py").read_text(encoding="utf-8")
+        ast.parse(screen)
+        ast.parse(capital)
+        self.assertIn('st.tabs([',screen)
+        self.assertIn('"Verificación de límites de adjudicación"',screen)
+        self.assertIn('"Verificación de capital contable"',screen)
+        self.assertIn('_render_limits_tab()',screen)
+        self.assertIn('render_capital_test()',screen)
+        self.assertIn('render_verification_form(record,prefix="capital")',capital)
+        self.assertIn('"Exportar resultados de capital contable (CSV)"',capital)
+        self.assertNotIn('extract_or_reuse',capital)
+
+
+if __name__=="__main__":
+    unittest.main()
