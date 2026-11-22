@@ -16,6 +16,7 @@ from services.award_limits import (
 from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values, verified_fields
 from ui.contract_verification import render_verification_form
+from ui.capital_contable import render_capital_test
 from services.amount_iva import identify_record_iva
 from services.drive_service import create_drive_client, is_configured
 from services.sheets_service import create_sheets_client, storage_configured
@@ -47,6 +48,24 @@ def _load_contracts():
 
 def render_award_tests() -> None:
     st.title("Pruebas de adjudicación")
+    st.caption(
+        "Evaluaciones documentales automatizadas · Municipio de León, Guanajuato. "
+        "Los resultados son preliminares y requieren cotejo por el auditor."
+    )
+    limits_tab, capital_tab = st.tabs([
+        "Verificación de límites de adjudicación",
+        "Verificación de capital contable",
+    ])
+    with limits_tab:
+        _render_limits_tab()
+    with capital_tab:
+        if not is_configured(st.secrets) or not storage_configured(st.secrets):
+            st.error("Se requiere configurar Google Sheets y la cuenta de servicio.")
+        else:
+            render_capital_test()
+
+
+def _render_limits_tab() -> None:
     st.caption(
         "Prueba AD-06 · Límites monetarios por modalidad y ejercicio fiscal "
         "(municipal o estatal, 2021–2026). Solo consulta contratos y Recursos."
@@ -235,12 +254,12 @@ def render_award_tests() -> None:
         "las evidencias del PDF no se sustituyen."
     )
     st.divider()
-    with st.expander("Otras cinco pruebas de adjudicación (planeadas)"):
+    with st.expander("Otras cuatro pruebas de adjudicación (planeadas)"):
         st.table({
             "Prueba": [
-                "Capital contable", "Especialidad del contratista",
+                "Especialidad del contratista",
                 "Vigencia del PUC", "Responsable técnico",
                 "Dictamen, notificación y firma del contrato",
             ],
-            "Estado": ["Por implementar"] * 5,
+            "Estado": ["Por implementar"] * 4,
         })
