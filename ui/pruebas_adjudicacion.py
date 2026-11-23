@@ -17,6 +17,7 @@ from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values, verified_fields
 from ui.contract_verification import render_verification_form
 from ui.capital_contable import render_capital_test
+from ui.puc_validity import render_puc_validity_test
 from services.amount_iva import identify_record_iva
 from services.drive_service import create_drive_client, is_configured
 from services.sheets_service import create_sheets_client, storage_configured
@@ -52,9 +53,10 @@ def render_award_tests() -> None:
         "Evaluaciones documentales automatizadas · Municipio de León, Guanajuato. "
         "Los resultados son preliminares y requieren cotejo por el auditor."
     )
-    limits_tab, capital_tab = st.tabs([
+    limits_tab, capital_tab, validity_tab = st.tabs([
         "Verificación de límites de adjudicación",
         "Verificación de capital contable",
+        "Verificación de vigencia del PUC",
     ])
     with limits_tab:
         _render_limits_tab()
@@ -63,6 +65,11 @@ def render_award_tests() -> None:
             st.error("Se requiere configurar Google Sheets y la cuenta de servicio.")
         else:
             render_capital_test()
+    with validity_tab:
+        if not is_configured(st.secrets) or not storage_configured(st.secrets):
+            st.error("Se requiere configurar Google Sheets y la cuenta de servicio.")
+        else:
+            render_puc_validity_test()
 
 
 def _render_limits_tab() -> None:
@@ -254,12 +261,11 @@ def _render_limits_tab() -> None:
         "las evidencias del PDF no se sustituyen."
     )
     st.divider()
-    with st.expander("Otras cuatro pruebas de adjudicación (planeadas)"):
+    with st.expander("Otras pruebas de adjudicación (planeadas)"):
         st.table({
             "Prueba": [
-                "Especialidad del contratista",
-                "Vigencia del PUC", "Responsable técnico",
+                "Especialidad del contratista", "Responsable técnico",
                 "Dictamen, notificación y firma del contrato",
             ],
-            "Estado": ["Por implementar"] * 4,
+            "Estado": ["Por implementar"] * 3,
         })
