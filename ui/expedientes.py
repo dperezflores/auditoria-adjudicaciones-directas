@@ -49,7 +49,10 @@ from services.extraction_store import (
 )
 from services.gemini_service import DEFAULT_MODEL
 from services.sheets_service import (
-    create_sheets_client, storage_configured, sync_to_sheets,
+    InventoryProtectionError, create_sheets_client, storage_configured, sync_to_sheets,
+)
+from services.work_groups import (
+    ALL_GROUPS, catalog_from_inventory, selected_inventory,
 )
 from services.writer_lock import get_writer_lock
 
@@ -69,11 +72,20 @@ ENABLED_EXTRACTORS = {
 def _refresh_inventory() -> None:
     """Refrescar Drive y sincronizar base, sin IA y sin borrar historial."""
     drive = create_drive_client(st.secrets["gcp_service_account"])
-    inventory = scan_drive(drive, st.secrets["drive"]["root_folder_id"])
+    inventory = scan_drive(
+        drive, st.secrets["drive"]["root_folder_id"],
+        st.secrets["drive"].get("group_folder_ids", ()),
+    )
     with get_writer_lock():
         sheets = create_sheets_client(st.secrets["gcp_service_account"])
-        sync_to_sheets(sheets, st.secrets["storage"]["spreadsheet_id"], inventory)
+        # Si una obra desaparece por un error de organización o permisos,
+        # proteger el registro histórico antes de cualquier escritura.
+        sync_to_sheets(
+            sheets, st.secrets["storage"]["spreadsheet_id"], inventory,
+            protect_existing=True,
+        )
     tables = load_status_tables(sheets, st.secrets["storage"]["spreadsheet_id"])
+    st.session_state["work_groups_catalog"] = catalog_from_inventory(inventory)
     st.session_state["ex_inventory"] = inventory
     st.session_state["ex_status_tables"] = tables
     st.session_state["ex_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -81,6 +93,8 @@ def _refresh_inventory() -> None:
     st.session_state.pop("ex_last_run", None)
     st.session_state.pop("ex_last_run_obra_id", None)
     st.session_state.pop("ex_bulk_last_run", None)
+    st.session_state.pop("results_portfolio", None)
+    st.session_state.pop("award_limits_contracts", None)
 
 
 def _load_data() -> bool:
@@ -89,6 +103,8 @@ def _load_data() -> bool:
             with st.spinner("Actualizando carpetas, PDFs y estados desde Google Drive..."):
                 _refresh_inventory()
             st.session_state.pop("ex_sync_error", None)
+        except InventoryProtectionError as exc:
+            st.session_state["ex_sync_error"] = str(exc)
         except Exception:
             st.session_state["ex_sync_error"] = (
                 "No se pudo completar la sincronización. Comprueba que la cuenta de "
@@ -98,6 +114,9 @@ def _load_data() -> bool:
         try:
             with st.spinner("Cargando expedientes autorizados..."):
                 _refresh_inventory()
+        except InventoryProtectionError as exc:
+            st.error(str(exc))
+            return False
         except Exception:
             st.error(
                 "No se pudieron cargar los expedientes. Comprueba la conexión "
@@ -1189,12 +1208,21 @@ def render_expedientes(authenticated: bool, folder_container=None) -> None:
         f"Carpeta raíz: {inventory.root_name} · "
         f"Última sincronización: {st.session_state.get('ex_synced_at', 'Sin fecha')} UTC"
     )
+    # Únicamente la VISTA se filtra. La sincronización anterior siempre
+    # utilizó el inventario COMPLETO para conservar obra_id y documentos.
+    selection = st.session_state.get("work_group_selection", ALL_GROUPS)
+    catalog = st.session_state.get("work_groups_catalog")
+    inventory = selected_inventory(inventory, catalog, selection)
     if not inventory.works:
         st.info(
-            "No hay carpetas de obra en el directorio autorizado. "
-            "Compártelas con la cuenta de servicio y actualiza Drive."
+            "No hay expedientes en el grupo seleccionado. "
+            "Elige «Todas las obras» para consultar el inventario completo."
         )
         return
+    st.caption(
+        f"Obras visibles en el grupo seleccionado: {len(inventory.works)}. "
+        "Los análisis anteriores permanecen registrados en Google Sheets."
+    )
 
     # La navegación y el inventario ahora viven en la barra lateral,
     # desplegable de Streamlit. El motor y los IDs de obra no cambian.
@@ -1221,6 +1249,7 @@ def render_expedientes(authenticated: bool, folder_container=None) -> None:
             pd.DataFrame([
                 {
                     "Carpeta": work.name,
+                    "Grupo": work.group_name or "Sin grupo",
                     "Estado": folders[work.id].label,
                     "Documentos": folders[work.id].total,
                     "Analizados": folders[work.id].complete,
