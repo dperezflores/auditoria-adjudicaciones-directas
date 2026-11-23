@@ -29,39 +29,27 @@ debe cotejarse con la normativa y el expediente.
 
 ## Cruce documental y temporal
 
-Se leen en Google Sheets los registros actuales de Documentos, Extracciones,
-DatosPUC y DatosDictamenAD, vinculando obra_id, documento_id y cache_key.
-El capital se obtiene del campo capital_contable del PUC, con evidencia y
-página. La identidad del contratista se comprueba por RFC y registro PUC.
-Los PUC duplicados, modificados, incompletos o no analizados no se toman
-automáticamente. Los contratos de LS/LP se marcan No aplica.
+Se leen en Google Sheets las versiones activas de `Documentos`, `Extracciones`, `DatosPUC` y `DatosDictamenAD`, vinculando obra/documento/caché. Los PUC duplicados, modificados, incompletos o no analizados no se aplican. La identidad del contratista se comprueba por RFC o número de registro PUC. LS/LP se marcan `No aplica`.
 
-Cuando existe dictamen AD completo, su fecha_emision es una referencia
-temporal preliminar; no sustituye confirmar la fecha efectiva de asignación.
-Sin dictamen, la fecha del contrato es solo referencia y la parte
-histórica queda pendiente. Si el PUC fue impreso o validado después
-de la referencia, estaba vencido, o no tiene fechas suficientes, la
-prueba conserva el cálculo pero no acredita retrospectivamente el capital.
+El capital que consta en el PDF disponible **no se presume registrado a la fecha de asignación**, aun si la validación o impresión son anteriores. Una constancia impresa **después** de la asignación tampoco demuestra por sí sola que el capital se registró después.
+
+El resultado distingue:
+
+- **Comparación aritmética provisional:** capital de constancia × importe contractual total. Se conserva el cálculo del 30 % existente.
+- **Acreditación histórica:** utiliza `capital_historico` y `fecha_registro_capital` solo cuando el auditor ha registrado evidencia verificable y la fecha oficial del movimiento no es posterior a la fecha efectiva de asignación.
+- Sin evidencia de fecha e importe históricos, el estado es `Capital histórico por acreditar`, incluso si la comparación provisional da suficiencia o insuficiencia.
+- Si existe un registro histórico documentado anterior o igual a la asignación, se compara **ese** capital contra el 30 %, mostrando `Capital histórico suficiente (preliminar)` o `Capital histórico inferior al 30% (preliminar)`.
+- Si el movimiento se registró después de asignar, no se utiliza ese capital retroactivamente: `Capital histórico por acreditar`.
+
+La fecha efectiva de asignación la puede asentar el auditor mediante `RevisionesPUC`; la fecha del dictamen es solo referencia preliminar, y la firma del contrato no la sustituye.
 
 ## Estados y presentación
 
-La tabla muestra carpeta, contrato, contratista, monto total, capital PUC,
-30 % requerido, diferencia, porcentaje de cobertura y dos diagnósticos
-independientes: comparación aritmética y verificación histórica.
+La tabla muestra carpeta, contrato, contratista, monto total, 30 % requerido, capital de constancia, capital utilizado en la comparación, diferencia, cobertura, resultado aritmético y acreditación histórica, con evidencia y vínculos de origen. La conclusión profesional del auditor y el resultado automático se muestran por separado.
 
-Los principales estados son: Cubre el 30 % (preliminar), Capital inferior
-al 30 % (preliminar), Pendiente de PUC, Pendiente de revisión histórica,
-Requiere revisión de identidad/importes/evidencia, y No aplica.
+Para cotejar fechas, refrendos y la condición de inscripción se dispone de la **prueba independiente AD-03 — Verificación de vigencia del PUC**, sin condicionar el cálculo del capital a la fecha de impresión. Ambas pruebas utilizan una hoja adicional `RevisionesPUC` con historial append-only ligado a las versiones actuales de contrato y PUC.
 
-Si aún no se analizó el PUC, se indica «Pendiente de PUC»; jamás se
-clasifica como capital insuficiente. La interfaz ofrece una ficha con
-evidencia y página PUC, vínculo al PDF original en Drive y descarga CSV.
-Para completar documentos faltantes se puede usar Expedientes > Varias
-carpetas > PUC.pdf. Consultar esta prueba no activa Gemini.
-
-El formulario de verificación existente permite confirmar o corregir
-valores del contrato (sin alterar extracción histórica). La prueba no
-reescribe los datos de PUC ni el archivo original.
+La pantalla de capital conserva la verificación contractual, descarga CSV y acceso al PUC. Consultar o guardar cotejos no activa Gemini. El formulario histórico solicita fuente, referencia y observaciones; la constancia y las extracciones originales no se modifican.
 
 ## Precauciones
 
