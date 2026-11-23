@@ -75,7 +75,7 @@ def render_puc_validity_test() -> None:
             "Comparación asignación": result.assignment_result,
             "Comparación firma": result.contract_result,
             "Resultado AD-03": result.state,
-            "Conclusión del auditor": review.conclusion_auditor if review else "Sin revisión",
+            "Conclusión del auditor": review.conclusion_vigencia if review else "Sin revisión",
         })
     df = pd.DataFrame(rows)
     a, b, c = st.columns(3)
@@ -135,7 +135,7 @@ def render_puc_validity_test() -> None:
     if review:
         st.caption(
             "Último cotejo manual: " + review.fecha_utc + " · " + review.auditor
-            + " · Conclusión: " + review.conclusion_auditor
+            + " · Conclusión: " + review.conclusion_vigencia
             + " · Soporte: " + review.referencia
         )
     if result.notes:
