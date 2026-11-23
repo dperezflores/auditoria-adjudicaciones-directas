@@ -1,30 +1,32 @@
-# Prueba AD-03 — Vigencia histórica del PUC (León)
+# Prueba AD-03 — Vigencia del PUC al firmar contrato (León)
 
-## Propósito
+## Objetivo y criterio aprobado
 
-Prueba independiente de CC-01, en la tercera pestaña de **Pruebas de adjudicación**. Determina preliminarmente si el periodo de inscripción/refrendo acreditado del Padrón Único de Contratistas cubre **la fecha efectiva de asignación** y **la firma del contrato**. Las excepciones legales y la aplicabilidad de normas se revisan por el auditor; no se genera una observación automática.
+Esta prueba determina **exclusivamente si el contratista cuenta con una vigencia de PUC que abarque la fecha de firma de su contrato**. No utiliza la fecha de asignación, notificación ni emisión del dictamen para decidir su resultado. Se conserva el alcance de adjudicación directa (AD) del piloto.
 
-## Reglas
+### Cálculo
 
-- Se utiliza el PUC activo y analizado que pertenece a la misma `obra_id`, con `documento_id` y `cache_key` exactos; duplicados o PUC modificados no se aceptan.
-- Se usa la fecha efectiva de asignación asentada por el auditor con referencia verificable. La fecha de emisión del dictamen AD se muestra únicamente como referencia preliminar; la fecha de firma no la sustituye.
-- Se comparan inicio y fin del registro o refrendo. Sin inicio, **no se usa la fecha de validación como sustituto**.
-- La **fecha de impresión** del PUC es un metadato, no condición para ser vigente. La fecha de validación tampoco es el inicio automático.
-- Los intervalos fuera de fecha quedan como «Periodo aportado no acredita vigencia»: deben buscarse refrendos históricos, posibles suspensiones y excepciones, sin afirmar automáticamente que el contratista no estaba inscrito.
-- Si la cédula informa suspensión o cancelación, se requiere identificar desde cuándo surtió efectos; no proyectar retrospectivamente un estado posterior.
-- Una comparación favorable se denomina «Vigencia documental compatible (preliminar)» y no sustituye cotejo de autoridad.
+1. Tomar la **fecha de firma** del contrato analizado (incluida la corrección validada por el auditor, cuando exista).
+2. Leer la fecha **vigencia hasta** de la cédula del PUC.
+3. Leer **vigencia desde** solo si aparece expresamente en el PUC. **Si no aparece, calcularla restando un año calendario a «vigencia hasta»**, de acuerdo con el criterio operativo aprobado para el piloto.
+4. Comparar con extremos inclusivos: `vigencia_desde <= firma <= vigencia_hasta`.
+5. Si la firma está dentro, reportar **«Vigente en fecha de firma»**. Si está fuera, reportar **«Fuera del periodo PUC en fecha de firma»**; antes de formular una observación, revisar otros refrendos o excepciones aplicables. Si falta la fecha de firma o vencimiento, reportar pendiente, nunca presumir vigencia.
 
-## Revisiones manuales
+**Ejemplo:** PUC con vigencia hasta 15/06/2025, sin inicio explícito: desde **15/06/2024** hasta **15/06/2025**. Una firma del 15/06/2024 o del 15/06/2025 queda dentro del periodo; una firma del 16/06/2025 queda fuera.
 
-Desde AD-03 o CC-01 el auditor puede registrar el mismo historial de revisión en la pestaña adicional `RevisionesPUC` de Google Sheets. Los registros son **append-only** y conservan `revision_id`, UTC, correo del auditor, obra, versión exacta de contrato y PUC, fecha efectiva de asignación, periodo histórico, estado, capital históricamente registrado, fecha de su registro, alcance del historial (completo, certificación a fecha o movimiento aislado), fuente, referencia y conclusiones profesionales independientes para CC-01 y AD-03. La revisión más reciente se aplica en memoria a las dos pruebas, siempre que sus identificadores documentales sigan coincidiendo.
+La resta es por año **calendario**, no por 365 días: en el caso excepcional de una vigencia que termina el 29/02 de un año bisiesto, el inicio calculado corresponde al 28/02 del año previo.
 
-El formulario requiere fuente, identificación del soporte y explicación; para capital histórico exige **importe y fecha de actualización oficial** juntos. Los campos de capital pueden quedar vacíos si el cotejo solo valida vigencia. Conclusión del auditor y clasificación automática se muestran por separado.
+## Registro y evidencia
 
-La pestaña `RevisionesPUC` se crea únicamente con el **primer guardado autorizado**, no por consultar una prueba. No se actualiza ni reemplaza el contenido original de `Extracciones`, `DatosPUC`, `DatosContratoV2` o documentos Drive. Guardar requiere sesión autorizada y el cerrojo de escritura del proceso Streamlit.
+- Se usa únicamente el PUC activo y analizado, de la misma obra, con identidad de contratista verificable. Se bloquean documentos duplicados, modificados y asociaciones erróneas.
+- La aplicación indica cuando el inicio de vigencia es **calculado**, lo separa del valor literal del PDF y nunca sustituye la información extraída por Gemini.
+- La fecha de validación y la de impresión no se usan para calcular la vigencia.
+- Suspensión o cancelación reportada en la cédula requiere cotejo de la fecha en que surtieron efectos; no se interpreta retrospectivamente sin evidencia.
+- El formulario histórico opcional `RevisionesPUC` y las conclusiones manuales previamente incorporadas permanecen disponibles, pero **no son necesarios para la comparación automática**. Si existe un intervalo histórico certificado que corresponde a las mismas versiones documentales, puede utilizarse en lugar del intervalo del PDF.
+- Esta simplificación de AD-03 **no cambia la prueba CC-01 de capital contable**, en la cual continúa siendo relevante el capital efectivamente registrado a la fecha de asignación. AD-06 tampoco cambia.
 
-## Límites
+## Resultado en la interfaz
 
-- No hay consulta histórica automática al padrón oficial; la evidencia documental histórica debe aportarse.
-- Cédulas con un único periodo no prueban la ausencia de refrendos distintos.
-- Los resultados son preliminares; la revisión jurídica de las excepciones, autenticidad y vigencia normativa sigue a cargo del auditor.
-- No se llama a Gemini al consultar o guardar una revisión, ni se altera AD-06.
+La tabla presenta contrato, contratista, registro PUC, **fecha de firma, vigencia desde, origen de esa fecha (expresa/calculada), vigencia hasta y resultado**. Los registros pendientes o con fechas incompatibles se identifican expresamente.
+
+AD-03 no llama a Gemini, no escribe datos al consultar y mantiene descarga CSV. La evaluación es una prueba de gabinete; un periodo de cédula que no cubre la firma no demuestra automáticamente que no existía otro refrendo.
