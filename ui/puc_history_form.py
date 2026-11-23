@@ -7,7 +7,7 @@ from __future__ import annotations
 import streamlit as st
 
 from services.puc_history import (
-    CONCLUSIONS, STATES, PucHistoryError, latest_puc_review,
+    CONCLUSIONS, STATES, ALCANCES_CAPITAL, PucHistoryError, latest_puc_review,
     make_puc_review, save_puc_review,
 )
 from services.sheets_service import create_sheets_client
@@ -30,7 +30,8 @@ def render_puc_history_form(record, puc, reviews, *, prefix: str) -> None:
         if previous:
             st.info(
                 f"Última revisión: {previous.fecha_utc} · {previous.auditor} · "
-                f"{previous.conclusion_auditor}. Referencia: {previous.referencia}"
+                f"Capital: {previous.conclusion_capital} · Vigencia: "
+                f"{previous.conclusion_vigencia}. Referencia: {previous.referencia}"
             )
         def prev(name):
             return getattr(previous, name) if previous else ""
@@ -76,9 +77,18 @@ def render_puc_history_form(record, puc, reviews, *, prefix: str) -> None:
                     value=prev("fecha_registro_capital"),
                     key=f"reg_capital_{key}", placeholder="01/04/2025",
                 )
+            scope = st.selectbox(
+                "Alcance del soporte para acreditar el último capital a la asignación",
+                ALCANCES_CAPITAL,
+                index=ALCANCES_CAPITAL.index(prev("alcance_capital"))
+                if prev("alcance_capital") in ALCANCES_CAPITAL else 0,
+                key=f"scope_capital_{key}",
+            )
             st.caption(
-                "Deja vacíos ambos campos si no cuentas con el historial "
-                "oficial del capital. El importe de una cédula posterior no basta."
+                "El importe y su fecha no bastan si el soporte únicamente "
+                "acredita un movimiento aislado. Para aplicar el capital como "
+                "histórico se requiere historial completo o certificación "
+                "del saldo vigente en la fecha de asignación."
             )
             st.markdown("**Trazabilidad y juicio profesional**")
             source = st.text_input(
@@ -91,13 +101,24 @@ def render_puc_history_form(record, puc, reviews, *, prefix: str) -> None:
                 value=prev("referencia"), key=f"reference_{key}",
                 placeholder="Oficio, folio, fecha, página o enlace del documento",
             )
-            conclusion = st.selectbox(
-                "Conclusión del auditor (se guarda separada del resultado automático)",
-                CONCLUSIONS,
-                index=CONCLUSIONS.index(prev("conclusion_auditor"))
-                if prev("conclusion_auditor") in CONCLUSIONS else 0,
-                key=f"conclusion_{key}",
-            )
+            a, b = st.columns(2)
+            with a:
+                conclusion_capital = st.selectbox(
+                    "Conclusión del auditor: capital (CC-01)",
+                    CONCLUSIONS,
+                    index=CONCLUSIONS.index(prev("conclusion_capital"))
+                    if prev("conclusion_capital") in CONCLUSIONS else 0,
+                    key=f"conclusion_capital_{key}",
+                )
+            with b:
+                conclusion_vigencia = st.selectbox(
+                    "Conclusión del auditor: vigencia (AD-03)",
+                    CONCLUSIONS,
+                    index=CONCLUSIONS.index(prev("conclusion_vigencia"))
+                    if prev("conclusion_vigencia") in CONCLUSIONS else 0,
+                    key=f"conclusion_vigencia_{key}",
+                )
+            st.caption("Las conclusiones profesionales se guardan separadas del motor automático.")
             note = st.text_area(
                 "Explicación del cotejo (obligatoria)",
                 value=prev("observaciones"), max_chars=1800,
@@ -120,9 +141,10 @@ def render_puc_history_form(record, puc, reviews, *, prefix: str) -> None:
                 fecha_asignacion=assignment, vigencia_desde=start,
                 vigencia_hasta=end, estado_registro_historico=state,
                 capital_historico=capital,
-                fecha_registro_capital=registered,
+                fecha_registro_capital=registered, alcance_capital=scope,
                 fuente=source, referencia=reference,
-                conclusion_auditor=conclusion, observaciones=note,
+                conclusion_capital=conclusion_capital,
+                conclusion_vigencia=conclusion_vigencia, observaciones=note,
             )
             client = create_sheets_client(dict(st.secrets["gcp_service_account"]))
             with get_writer_lock():
