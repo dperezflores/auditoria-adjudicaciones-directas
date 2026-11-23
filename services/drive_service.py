@@ -136,9 +136,10 @@ def _is_group_folder(name: str, folder_id: str, configured: set[str]) -> bool:
     No inferirlo por tener subcarpetas: una obra puede tener subcarpetas
     documentales llamadas Contratos, PUC, Anexos, etc.
     """
-    return folder_id in configured or bool(re.match(
-        r"^GRUPO(?:[_: -]+|\\s*[·]\\s*)\\S", str(name or ""), flags=re.IGNORECASE,
-    ))
+    normalized = str(name or "").strip().casefold()
+    return folder_id in configured or normalized.startswith(
+        ("grupo_", "grupo-", "grupo:", "grupo ·", "grupo ")
+    )
 
 
 def _discover_layout(
