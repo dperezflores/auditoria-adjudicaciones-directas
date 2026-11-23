@@ -139,8 +139,11 @@ class CapitalContableTests(unittest.TestCase):
         self.assertEqual(r.difference,Decimal("52203.00"))
         self.assertEqual(r.comparison,"Cubre el 30%")
         self.assertEqual(r.coverage,Decimal("35.22"))
-        self.assertEqual(r.state,"Capital histórico por acreditar")
-        self.assertIn("Capital histórico",r.historical)
+        self.assertEqual(r.state,"Cubre el 30% (revisión inicial)")
+        self.assertIn("opcional",r.historical)
+        self.assertEqual(r.assignment.fecha,"15/12/2025")
+        self.assertEqual(r.vigencia_puc,"Vigente en fecha de firma")
+        self.assertEqual(r.vigencia_desde,"16/05/2025")
 
     def test_capital_less_than_30_is_detected_not_falsely_approved(self):
         r=evaluate_capital(_contract(),_sources(
@@ -148,7 +151,7 @@ class CapitalContableTests(unittest.TestCase):
         ))
         self.assertEqual(r.difference,Decimal("-0.01"))
         self.assertEqual(r.comparison,"Capital inferior al 30%")
-        self.assertEqual(r.state,"Capital histórico por acreditar")
+        self.assertEqual(r.state,"Capital inferior al 30% (revisión inicial)")
 
     def test_30_percent_uses_total_not_net_after_iva(self):
         r=evaluate_capital(_contract(),_sources(_puc()))
@@ -179,29 +182,32 @@ class CapitalContableTests(unittest.TestCase):
             fecha_impresion="16 de diciembre de 2025",
         )))
         self.assertEqual(r.comparison,"Cubre el 30%")
-        self.assertEqual(r.state,"Capital histórico por acreditar")
-        self.assertTrue(any("impresión" in note for note in r.notes))
+        self.assertEqual(r.state,"Cubre el 30% (revisión inicial)")
+        self.assertEqual(r.vigencia_puc,"Vigente en fecha de firma")
 
     def test_after_award_puc_validation_is_pending(self):
         r=evaluate_capital(_contract(),_sources(_puc(
             fecha_validacion="20 de diciembre de 2025",
         )))
-        self.assertEqual(r.state,"Capital histórico por acreditar")
-        self.assertTrue(any("validación" in note for note in r.notes))
+        self.assertEqual(r.state,"Cubre el 30% (revisión inicial)")
+        self.assertEqual(r.vigencia_puc,"Vigente en fecha de firma")
 
-    def test_puc_expired_or_suspended_is_pending(self):
-        for puc in (
-            _puc(vigencia_hasta="1 de diciembre de 2025"),
-            _puc(estado_registro="SUSPENDIDO"),
-        ):
-            r=evaluate_capital(_contract(),_sources(puc))
-            self.assertEqual(r.state,"Capital histórico por acreditar")
+    def test_puc_expired_or_suspended_is_flagged(self):
+        expired=evaluate_capital(
+            _contract(),_sources(_puc(vigencia_hasta="1 de diciembre de 2025"))
+        )
+        self.assertEqual(expired.state,"PUC fuera de vigencia en fecha de firma")
+        self.assertEqual(expired.comparison,"Cubre el 30%")
+        suspended=evaluate_capital(
+            _contract(),_sources(_puc(estado_registro="SUSPENDIDO"))
+        )
+        self.assertEqual(suspended.state,"Requiere revisión de vigencia PUC")
 
-    def test_missing_dictamen_uses_contract_date_only_as_reference(self):
+    def test_missing_dictamen_uses_contract_signature_as_assignment(self):
         r=evaluate_capital(_contract(),_sources(_puc(),date=""))
-        self.assertEqual(r.state,"Capital histórico por acreditar")
-        self.assertIn("Capital histórico",r.historical)
-        self.assertTrue(any("firma usada solo como" in n for n in r.notes))
+        self.assertEqual(r.state,"Cubre el 30% (revisión inicial)")
+        self.assertEqual(r.assignment.fecha,"15/12/2025")
+        self.assertIn("Firma del contrato",r.assignment.fuente)
 
     def test_mismatched_rfc_and_registration_require_cotejo(self):
         for revised in (
@@ -253,12 +259,12 @@ class CapitalContableTests(unittest.TestCase):
                 self.assertNotIn(WORK,sources.puc_by_work)
                 self.assertIn(WORK,sources.issues_by_work)
 
-    def test_mismatched_assignment_amount_flags_inconsistent_basis(self):
+    def test_different_dictamen_amount_is_note_not_bulk_blocker(self):
         r=evaluate_capital(_contract(),_sources(
             _puc(),issued_amount="$900,000.00"
         ))
-        self.assertEqual(r.state,"Requiere revisión del monto adjudicado")
-        self.assertTrue(any("no coinciden" in n for n in r.notes))
+        self.assertEqual(r.state,"Cubre el 30% (revisión inicial)")
+        self.assertTrue(any("dictamen" in n.casefold() for n in r.notes))
 
     def test_missing_capital_evidence_requires_cotejo(self):
         r=evaluate_capital(_contract(),_sources(
@@ -307,7 +313,7 @@ class CapitalContableTests(unittest.TestCase):
         self.assertEqual(result.capital_constancia, Decimal("352203.00"))
         self.assertEqual(result.capital, Decimal("275000.00"))
         self.assertEqual(result.requirement, Decimal("300000.00"))
-        self.assertEqual(result.state, "Capital histórico inferior al 30% (preliminar)")
+        self.assertEqual(result.state, "Capital inferior al 30% (historial SOP)")
 
     def test_later_capital_update_cannot_apply_retroactively(self):
         contract = _contract()
@@ -315,11 +321,11 @@ class CapitalContableTests(unittest.TestCase):
             contrato_documento_id=contract.documento_id,
             contrato_cache_key=contract.cache_key,
             capital_historico="900000.00",
-            fecha_registro_capital="12/12/2025",
+            fecha_registro_capital="20/12/2025",
         )
         result = evaluate_capital(contract, _sources(_puc()), reviewed)
         self.assertFalse(result.capital_historico_acreditado)
-        self.assertEqual(result.state, "Capital histórico por acreditar")
+        self.assertEqual(result.state, "Requiere revisión de actualización posterior")
         self.assertIn("posterior", result.historical)
         self.assertEqual(result.capital, result.capital_constancia)
 
@@ -333,7 +339,7 @@ class CapitalContableTests(unittest.TestCase):
         )
         result = evaluate_capital(contract, _sources(_puc()), reviewed)
         self.assertFalse(result.capital_historico_acreditado)
-        self.assertEqual(result.state, "Capital histórico por acreditar")
+        self.assertEqual(result.state, "Cubre el 30% (revisión inicial)")
         self.assertEqual(result.capital, result.capital_constancia)
 
     def test_print_after_assignment_does_not_block_certified_prior_capital(self):
@@ -349,7 +355,7 @@ class CapitalContableTests(unittest.TestCase):
             reviewed,
         )
         self.assertTrue(result.capital_historico_acreditado)
-        self.assertEqual(result.state, "Capital histórico suficiente (preliminar)")
+        self.assertEqual(result.state, "Cubre el 30% (historial SOP)")
 
     def test_review_is_not_reused_after_contract_or_puc_replacement(self):
         contract = _contract()
@@ -361,7 +367,7 @@ class CapitalContableTests(unittest.TestCase):
         replaced = replace(contract, cache_key="contract_new_version")
         result = evaluate_capital(replaced, _sources(_puc()), reviewed)
         self.assertFalse(result.capital_historico_acreditado)
-        self.assertEqual(result.state, "Capital histórico por acreditar")
+        self.assertEqual(result.state, "Cubre el 30% (revisión inicial)")
 
     def test_tabs_keep_existing_limits_and_render_capital_without_gemini(self):
         base=Path(__file__).resolve().parents[1]
