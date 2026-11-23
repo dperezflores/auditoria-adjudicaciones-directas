@@ -45,7 +45,7 @@ class CapitalRiskChartTests(unittest.TestCase):
         self.assertEqual(deficits[0].faltante, Decimal("100000.00"))
         self.assertEqual(deficits[0].minimo, Decimal("300000.00"))
         self.assertEqual(deficits[0].capital, Decimal("200000"))
-        self.assertEqual(deficits[0].contratista, "GUTIERREZ GUTIERREZ DE VELASCO ALEJANDRO") if False else None
+        self.assertTrue(deficits[0].contratista)
 
     def test_same_contractor_multiple_contracts_are_separate(self):
         one = _contract()
