@@ -28,7 +28,7 @@ def _review(**extra):
         fuente="Constancia histórica certificada",
         referencia="Oficio PUC 123/2025, foja 3",
         observaciones="Cotejo de registro vigente al adjudicar.",
-        conclusion_auditor="Pendiente",
+        conclusion_capital="Pendiente", conclusion_vigencia="Pendiente",
     )
     fields.update(extra)
     return make_puc_review(**fields)
