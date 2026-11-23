@@ -369,6 +369,63 @@ class CapitalContableTests(unittest.TestCase):
         self.assertFalse(result.capital_historico_acreditado)
         self.assertEqual(result.state, "Cubre el 30% (revisión inicial)")
 
+    def test_contract_signature_not_dictamen_controls_puc_interval(self):
+        # Dictamen 10/12/25 y firma 15/12/25. Cédula empieza 12/12/25.
+        puc=_puc(vigencia_desde="",vigencia_hasta="12/12/2026")
+        result=evaluate_capital(
+            _contract(),_sources(puc,date="10 de diciembre de 2025")
+        )
+        self.assertEqual(result.vigencia_desde,"12/12/2025")
+        self.assertEqual(result.assignment.fecha,"15/12/2025")
+        self.assertEqual(result.state,"Cubre el 30% (revisión inicial)")
+
+    def test_no_capital_history_is_not_default_incumplimiento(self):
+        result=evaluate_capital(_contract(),_sources(_puc()))
+        self.assertEqual(result.state,"Cubre el 30% (revisión inicial)")
+        self.assertFalse(result.capital_historico_acreditado)
+        self.assertEqual(result.capital_constancia,result.capital)
+        self.assertNotIn("por acreditar",result.state.casefold())
+
+    def test_no_signature_cannot_be_approved_with_current_certificate(self):
+        result=evaluate_capital(
+            _contract(fecha_firma_contrato=""),_sources(_puc())
+        )
+        self.assertEqual(result.state,"Pendiente de vigencia PUC")
+        self.assertIsNone(result.assignment)
+        self.assertEqual(result.comparison,"Cubre el 30%")
+
+    def test_no_puc_expiration_cannot_be_approved(self):
+        result=evaluate_capital(
+            _contract(),_sources(_puc(vigencia_desde="",vigencia_hasta=""))
+        )
+        self.assertEqual(result.state,"Pendiente de vigencia PUC")
+        self.assertEqual(result.comparison,"Cubre el 30%")
+
+    def test_identity_and_vigencia_are_independent_of_30_percent(self):
+        result=evaluate_capital(
+            _contract(),_sources(_puc(vigencia_hasta="01/12/2025"))
+        )
+        self.assertEqual(result.comparison,"Cubre el 30%")
+        self.assertEqual(result.state,"PUC fuera de vigencia en fecha de firma")
+
+    def test_prior_effective_assignment_date_in_manual_review_is_respected(self):
+        # El cálculo masivo usa firma; una revisión complementaria con
+        # asignación anterior al movimiento debe impedir aprobación histórica.
+        contract=_contract()
+        historical=self._historical_review(
+            contrato_documento_id=contract.documento_id,
+            contrato_cache_key=contract.cache_key,
+            fecha_asignacion="10/12/2025",
+            fecha_registro_capital="12/12/2025",
+            capital_historico="950000.00",
+        )
+        result=evaluate_capital(contract,_sources(_puc()),historical)
+        self.assertEqual(result.assignment.fecha,"15/12/2025")
+        self.assertEqual(
+            result.state,"Requiere revisión de actualización posterior"
+        )
+        self.assertFalse(result.capital_historico_acreditado)
+
     def test_tabs_keep_existing_limits_and_render_capital_without_gemini(self):
         base=Path(__file__).resolve().parents[1]
         screen=(base/"ui"/"pruebas_adjudicacion.py").read_text(encoding="utf-8")
