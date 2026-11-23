@@ -46,7 +46,17 @@ class WorkTableNavigationTests(unittest.TestCase):
                 text = _source(file)
                 ast.parse(text)
                 self.assertIn('selection_mode="single-row"', text)
-                self.assertIn('on_select="rerun"', text)
+                if file == "ui/capital_contable.py":
+                    self.assertIn(
+                        "on_select=lambda: _select_capital_from_table(contract_keys)",
+                        text,
+                    )
+                    self.assertIn(
+                        "on_select=lambda: _select_capital_from_chart(valid_keys)",
+                        text,
+                    )
+                else:
+                    self.assertIn('on_select="rerun"', text)
                 self.assertIn(f'key="{key}"', text)
                 self.assertIn('selected_rows = table_event.selection.rows', text)
                 self.assertIn(mapping, text)
