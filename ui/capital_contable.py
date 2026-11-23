@@ -16,6 +16,10 @@ from services.capital_contable import (
 )
 from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values
+from services.puc_history import (
+    PucHistoryError, latest_puc_review, read_puc_reviews,
+)
+from ui.puc_history_form import render_puc_history_form
 from services.drive_service import create_drive_client
 from services.sheets_service import create_sheets_client
 from ui.contract_verification import render_verification_form
@@ -29,6 +33,11 @@ def _load_capital_data():
 def _load_portfolio():
     sheets=create_sheets_client(dict(st.secrets["gcp_service_account"]))
     return read_verified_portfolio(sheets,st.secrets["storage"]["spreadsheet_id"])
+
+
+def _load_puc_reviews():
+    sheets=create_sheets_client(dict(st.secrets["gcp_service_account"]))
+    return read_puc_reviews(sheets,st.secrets["storage"]["spreadsheet_id"])
 
 
 def render_capital_test() -> None:
@@ -52,6 +61,7 @@ def render_capital_test() -> None:
     if st.button("Actualizar contratos y PUC guardados",key="capital_reload"):
         st.session_state.pop("capital_sources",None)
         st.session_state.pop("award_limits_contracts",None)
+        st.session_state.pop("puc_historical_reviews",None)
         st.rerun()
 
     if "award_limits_contracts" not in st.session_state:
@@ -75,12 +85,29 @@ def render_capital_test() -> None:
             )
             return
 
+    if "puc_historical_reviews" not in st.session_state:
+        try:
+            st.session_state["puc_historical_reviews"]=_load_puc_reviews()
+        except PucHistoryError as exc:
+            st.error("Historial del PUC: "+str(exc))
+            return
+        except Exception:
+            st.error("No se pudieron consultar las revisiones históricas del PUC.")
+            return
+
     portfolio=st.session_state["award_limits_contracts"]
     sources=st.session_state["capital_sources"]
+    revisions=st.session_state["puc_historical_reviews"]
     if not portfolio.records:
         st.warning("No existen contratos analizados para realizar la prueba.")
         return
-    results=[(record,evaluate_capital(record,sources)) for record in portfolio.records]
+    results=[
+        (record,evaluate_capital(
+            record,sources,latest_puc_review(
+                revisions,record,sources.puc_by_work.get(record.obra_id)
+            )
+        )) for record in portfolio.records
+    ]
     rows=[]
     for record,result in results:
         normalized,_=normalized_values(record)
@@ -92,7 +119,9 @@ def render_capital_test() -> None:
             "Modalidad":normalized.get("modalidad_adjudicacion") or "—",
             "Monto contractual total":money(result.contract_amount),
             "Capital mínimo 30%":money(result.requirement),
-            "Capital PUC":money(result.capital),
+            "Capital constancia disponible":money(result.capital_constancia),
+            "Capital usado en comparación":money(result.capital),
+            "Capital histórico acreditado":("Sí, preliminar" if result.capital_historico_acreditado else "No"),
             "Diferencia capital":money(result.difference),
             "Capital / contrato (%)":(
                 f"{result.coverage:.2f}%" if result.coverage is not None else "—"
@@ -118,13 +147,13 @@ def render_capital_test() -> None:
     ).sum()))
     c.metric("Pendientes de PUC",int(states.get("Pendiente de PUC",0)))
     d.metric("Requieren revisión",int(df["Estado de prueba"].str.contains(
-        "Requiere revisión|Pendiente de revisión histórica",regex=True,
+        "Requiere revisión|Pendiente de revisión histórica|Capital histórico por acreditar",regex=True,
     ).sum()))
     st.markdown("#### Evaluación automática del capital contable")
     st.caption(
         "El cálculo se muestra incluso cuando el PUC necesita cotejo "
-        "histórico; NO se declara cumplimiento definitivo por tener capital "
-        "suficiente en una cédula posterior a la asignación."
+        "histórico; NO se declara cumplimiento por tener capital suficiente "
+        "en una constancia, con independencia de su fecha de impresión."
     )
     st.dataframe(df,hide_index=True,use_container_width=True)
     st.download_button(
@@ -153,7 +182,7 @@ def render_capital_test() -> None:
             "puedes seleccionar PUC.pdf para completar los documentos pendientes."
         )
     elif result.state in ("Requiere revisión de identidad","Requiere revisión de importes",
-                         "Pendiente de revisión histórica"):
+                         "Pendiente de revisión histórica","Capital histórico por acreditar"):
         st.warning(
             result.state + ". Comparación de capital: "+result.comparison+
             ". No es una determinación jurídica definitiva."
@@ -170,14 +199,15 @@ def render_capital_test() -> None:
         "Dato":[
             "Carpeta","Contratista","Número de contrato",
             "Monto total del contrato","30 % requerido",
-            "Capital contable PUC","Diferencia","Porcentaje de cobertura",
-            "Comparación aritmética","Referencia temporal","Situación histórica",
+            "Capital de constancia","Capital usado en comparación","Diferencia",
+            "Porcentaje de cobertura","Comparación aritmética",
+            "Referencia temporal","Situación histórica",
         ],
         "Valor":[
             record.nombre_carpeta,normalized.get("contratista") or "—",
             normalized.get("numero_contrato") or "—",
             money(result.contract_amount),money(result.requirement),
-            money(result.capital),money(result.difference),
+            money(result.capital_constancia),money(result.capital),money(result.difference),
             f"{result.coverage:.2f}%" if result.coverage is not None else "—",
             result.comparison,
             result.assignment.fecha if result.assignment else
@@ -219,6 +249,14 @@ def render_capital_test() -> None:
         st.markdown("**Aspectos por cotejar**")
         for note in result.notes:
             st.caption("• "+note)
+    if result.revision:
+        st.caption(
+            "Revisión histórica: "+result.revision.fecha_utc+" · "+
+            result.revision.auditor+" · Conclusión del auditor: "+
+            result.revision.conclusion_auditor+" · Soporte: "+
+            result.revision.referencia
+        )
+    render_puc_history_form(record,result.puc,revisions,prefix="capital")
     render_verification_form(record,prefix="capital")
     st.caption(
         "Las correcciones del contrato se guardan mediante el formulario "
