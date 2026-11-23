@@ -253,7 +253,7 @@ def render_capital_test() -> None:
         st.caption(
             "Revisión histórica: "+result.revision.fecha_utc+" · "+
             result.revision.auditor+" · Conclusión del auditor: "+
-            result.revision.conclusion_auditor+" · Soporte: "+
+            result.revision.conclusion_capital+" · Soporte: "+
             result.revision.referencia
         )
     render_puc_history_form(record,result.puc,revisions,prefix="capital")
