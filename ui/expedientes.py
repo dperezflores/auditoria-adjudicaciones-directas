@@ -6,6 +6,7 @@ El análisis se solicita únicamente al pulsar el botón habilitado del extracto
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -949,6 +950,34 @@ def _choose_folder(folder_id: str) -> None:
     st.session_state["ex_selected_folder"] = folder_id
 
 
+def _select_folder_from_work_table(table_key: str, work_ids: tuple[str, ...]) -> None:
+    """Callback previo al rerun: sincronizar la tabla de obras con el sidebar."""
+    event = st.session_state.get(table_key) or {}
+    rows = (event.get("selection") or {}).get("rows") or []
+    if rows and isinstance(rows[0], int) and 0 <= rows[0] < len(work_ids):
+        st.session_state["ex_selected_folder"] = work_ids[rows[0]]
+
+
+def _open_bulk_work(folder_id: str) -> None:
+    """Abrir una obra del listado multicarpeta sin iniciar análisis con IA."""
+    st.session_state["ex_selected_folder"] = folder_id
+    st.session_state["ex_analysis_mode"] = "Una carpeta"
+
+
+def _show_bulk_selected_work(work: WorkRecord, *, key: str) -> None:
+    """Ficha breve de obra elegida en una tabla de un bloque multicarpeta."""
+    st.caption(
+        f"**Obra seleccionada:** {work.name} · "
+        f"{len(work.pdfs)} PDF · {len(work.other_files)} otros archivos."
+    )
+    st.button(
+        "Abrir expediente y consultar documentos de esta obra",
+        key=f"ex_bulk_open_{key}",
+        on_click=_open_bulk_work,
+        args=(work.id,),
+    )
+
+
 def _render_sidebar_folders(
     inventory: DriveInventory,
     folders: dict,
@@ -1113,6 +1142,38 @@ def render_expedientes(authenticated: bool, folder_container=None) -> None:
     obra_id = _render_sidebar_folders(
         inventory, folders, states, folder_container=folder_container,
     )
+
+    # La tabla de obras usa la misma clave de carpeta que el árbol lateral.
+    # Su callback ocurre antes del siguiente rerun y cambia el expediente
+    # principal inmediatamente, sin consumir Gemini.
+    work_list = [
+        work for work in inventory.works
+        if work.name.strip().casefold() != "recursos"
+    ]
+    if work_list:
+        work_ids = tuple(work.id for work in work_list)
+        table_key = "ex_works_" + sha256("|".join(work_ids).encode()).hexdigest()[:12]
+        st.markdown("### Obras disponibles")
+        st.caption(
+            "Selecciona una fila para abrir la obra en el panel principal; "
+            "se sincroniza con la carpeta de la barra lateral."
+        )
+        st.dataframe(
+            pd.DataFrame([
+                {
+                    "Carpeta": work.name,
+                    "Estado": folders[work.id].label,
+                    "Documentos": folders[work.id].total,
+                    "Analizados": folders[work.id].complete,
+                }
+                for work in work_list
+            ]),
+            hide_index=True, use_container_width=True,
+            height=min(440, 85 + len(work_list) * 38),
+            selection_mode="single-row",
+            on_select=lambda: _select_folder_from_work_table(table_key, work_ids),
+            key=table_key,
+        )
     obra = next(work for work in inventory.works if work.id == obra_id)
 
     st.markdown("### Extracción documental")
