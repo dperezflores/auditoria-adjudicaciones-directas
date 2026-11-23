@@ -174,7 +174,20 @@ def _render_limits_tab() -> None:
     a.metric("Contratos",len(df))
     b.metric("Dentro de límite o rango",int(totals.get("Dentro del límite",0) + totals.get("Dentro del rango de LP",0)))
     c.metric("Requieren revisión",int(totals.get("Requiere revisión",0)))
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.caption(
+        "Selecciona una fila de esta tabla para mostrar abajo la obra, "
+        "el cálculo aplicado, la evidencia y la verificación correspondiente."
+    )
+    table_event = st.dataframe(
+        df, hide_index=True, use_container_width=True,
+        height=min(520, 85 + len(df) * 38),
+        selection_mode="single-row", on_select="rerun",
+        key="award_limits_selectable_work_table",
+    )
+    selected_rows = table_event.selection.rows
+    chosen = selected_rows[0] if selected_rows else 0
+    if not 0 <= chosen < len(evaluations):
+        chosen = 0
     st.download_button(
         "Exportar resultados de la prueba (CSV)",
         data=df.to_csv(index=False).encode("utf-8-sig"),
@@ -182,16 +195,7 @@ def _render_limits_tab() -> None:
         mime="text/csv", key="award_limits_csv",
     )
 
-    st.markdown("### Cotejo de un contrato y guardado de la verificación")
-    positions=list(range(len(evaluations)))
-    chosen=st.selectbox(
-        "Contrato",positions,key="award_limits_selected_contract",
-        format_func=lambda pos: (
-            evaluations[pos][0].nombre_carpeta + " · "
-            + (evaluations[pos][0].values.get("numero_contrato")
-               or evaluations[pos][0].documento)
-        ),
-    )
+    st.markdown("### Cotejo de la obra seleccionada")
     record, automatic=evaluations[chosen]
     values=record.full_values or {}
     normalized,notes=normalized_values(record)
