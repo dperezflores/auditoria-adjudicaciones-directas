@@ -46,10 +46,12 @@ def render_capital_test() -> None:
         "Prueba CC-01 · Adjudicación directa de obra o servicios · Municipio de León."
     )
     st.info(
-        f"**Criterio de referencia:** {MANUAL_CODE}. El capital registrado "
-        "en el PUC a la fecha de la asignación debe representar al menos "
-        "**30 % del monto total de la obra**. La comparación es aritmética "
-        "y preliminar; la fecha de asignación y el registro histórico deben cotejarse."
+        f"**Revisión masiva CC-01:** {MANUAL_CODE}. Se utiliza la **fecha de "
+        "firma del contrato como referencia operativa de asignación**. "
+        "Primero se comprueba que el PUC esté vigente en esa fecha y después "
+        "se compara el capital de la cédula con el **30 % del monto contractual**. "
+        "El historial de movimientos de capital ante SOP se solicitará como "
+        "verificación complementaria, no como requisito para clasificar cada obra."
     )
     st.link_button("Consultar procedimiento DGOP León (fuente)", MANUAL_URL)
     st.caption(
@@ -119,41 +121,48 @@ def render_capital_test() -> None:
             "Modalidad":normalized.get("modalidad_adjudicacion") or "—",
             "Monto contractual total":money(result.contract_amount),
             "Capital mínimo 30%":money(result.requirement),
-            "Capital constancia disponible":money(result.capital_constancia),
-            "Capital usado en comparación":money(result.capital),
-            "Capital histórico acreditado":("Sí, preliminar" if result.capital_historico_acreditado else "No"),
+            "Capital de cédula PUC":money(result.capital_constancia),
+            "Capital evaluado":money(result.capital),
+            "Soporte histórico SOP":(
+                "Documentado" if result.capital_historico_acreditado
+                else "Complementario / opcional"
+            ),
             "Diferencia capital":money(result.difference),
             "Capital / contrato (%)":(
                 f"{result.coverage:.2f}%" if result.coverage is not None else "—"
             ),
             "Comparación 30%":result.comparison,
-            "Verificación histórica PUC":result.historical,
-            "Estado de prueba":result.state,
-            "Fecha de referencia":(
-                result.assignment.fecha if result.assignment
-                else normalized.get("fecha_firma_contrato") or "—"
+            "Vigencia PUC a la firma":result.vigencia_puc or "—",
+            "Vigencia desde":result.vigencia_desde or "—",
+            "Vigencia hasta":result.vigencia_hasta or "—",
+            "Resultado CC-01":result.state,
+            "Firma / asignación operativa":(
+                result.assignment.fecha if result.assignment else "—"
             ),
             "Registro PUC":puc.registro if puc else "—",
-            "Fecha validación PUC":puc.fecha_validacion if puc else "—",
-            "Vigencia hasta":puc.vigencia_hasta if puc else "—",
+            "Cotejo complementario SOP":result.historical,
         })
 
     df=pd.DataFrame(rows)
-    states=df["Estado de prueba"].value_counts()
+    states=df["Resultado CC-01"].value_counts()
     a,b,c,d=st.columns(4)
     a.metric("Contratos",len(df))
-    b.metric("Cálculo 30% disponible",int(df["Comparación 30%"].isin(
-        ("Cubre el 30%","Capital inferior al 30%"),
-    ).sum()))
-    c.metric("Pendientes de PUC",int(states.get("Pendiente de PUC",0)))
-    d.metric("Requieren revisión",int(df["Estado de prueba"].str.contains(
-        "Requiere revisión|Pendiente de revisión histórica|Capital histórico por acreditar",regex=True,
-    ).sum()))
+    b.metric("Cubren 30% y PUC vigente",int(
+        df["Resultado CC-01"].str.startswith("Cubre el 30%").sum()
+    ))
+    c.metric("Capital inferior al 30%",int(
+        df["Resultado CC-01"].str.startswith("Capital inferior al 30%").sum()
+    ))
+    d.metric("Pendientes o por revisar",int(
+        (~df["Resultado CC-01"].str.startswith(
+            ("Cubre el 30%", "Capital inferior al 30%")
+        )).sum()
+    ))
     st.markdown("#### Evaluación automática del capital contable")
     st.caption(
-        "El cálculo se muestra incluso cuando el PUC necesita cotejo "
-        "histórico; NO se declara cumplimiento por tener capital suficiente "
-        "en una constancia, con independencia de su fecha de impresión."
+        "Clasificación inicial: PUC vigente a fecha de firma + capital de "
+        "cédula frente al 30 %. El cotejo ante SOP sobre cambios de capital "
+        "durante la vigencia se reserva para la revisión complementaria."
     )
     st.caption(
         "Selecciona una fila para ver abajo el detalle del capital, "
@@ -179,33 +188,43 @@ def render_capital_test() -> None:
     st.markdown("#### Datos de la obra seleccionada")
     record,result=results[selected]
     normalized,_=normalized_values(record)
-    if result.state=="Pendiente de PUC":
+    if result.state == "Pendiente de PUC":
         st.warning(
-            "La carpeta aún no cuenta con un PUC completo analizado "
-            "y vinculado al contrato. En **Expedientes > Varias carpetas** "
-            "puedes seleccionar PUC.pdf para completar los documentos pendientes."
+            "No hay una cédula PUC analizada y vinculada con esta obra. "
+            "Analiza el PUC en Expedientes para completar esta prueba."
         )
-    elif result.state in ("Requiere revisión de identidad","Requiere revisión de importes",
-                         "Pendiente de revisión histórica","Capital histórico por acreditar"):
-        st.warning(
-            result.state + ". Comparación de capital: "+result.comparison+
-            ". No es una determinación jurídica definitiva."
+    elif result.state.startswith("Cubre el 30%"):
+        st.success(
+            "Cubre el 30 % y el PUC está vigente a la fecha de firma. "
+            "Resultado de revisión masiva inicial; el historial de cambios "
+            "de capital ante SOP podrá corroborarse después."
         )
-    elif result.comparison=="Capital inferior al 30%":
+    elif result.state.startswith("Capital inferior al 30%"):
         st.error(
-            "El capital registrado es inferior al 30 % calculado. "
-            "Cotejar importe, fecha de asignación y PUC histórico antes "
-            "de formular una observación."
+            "El capital evaluado es inferior al 30 % requerido. "
+            "Es una señal de riesgo para cotejo con el expediente y la SOP, "
+            "no una determinación definitiva de incumplimiento."
+        )
+    elif result.state == "PUC fuera de vigencia en fecha de firma":
+        st.warning(
+            "La fecha de firma está fuera del periodo de esta cédula PUC. "
+            "Verifica otros refrendos o antecedentes antes de concluir falta de vigencia."
         )
     else:
-        st.success(result.state+". Resultado preliminar sujeto a cotejo documental.")
+        st.warning(
+            result.state + ". Verifica los datos señalados para completar "
+            "la revisión masiva; la comparación aritmética es: "
+            + result.comparison + "."
+        )
     st.table({
         "Dato":[
             "Carpeta","Contratista","Número de contrato",
             "Monto total del contrato","30 % requerido",
-            "Capital de constancia","Capital usado en comparación","Diferencia",
+            "Capital de cédula PUC","Capital evaluado","Diferencia",
             "Porcentaje de cobertura","Comparación aritmética",
-            "Referencia temporal","Situación histórica",
+            "Firma / asignación operativa", "Vigencia PUC desde",
+            "Vigencia PUC hasta","Estado vigencia a la firma",
+            "Seguimiento histórico SOP",
         ],
         "Valor":[
             record.nombre_carpeta,normalized.get("contratista") or "—",
@@ -214,8 +233,10 @@ def render_capital_test() -> None:
             money(result.capital_constancia),money(result.capital),money(result.difference),
             f"{result.coverage:.2f}%" if result.coverage is not None else "—",
             result.comparison,
-            result.assignment.fecha if result.assignment else
-            normalized.get("fecha_firma_contrato") or "—",
+            result.assignment.fecha if result.assignment else "—",
+            result.vigencia_desde or "—",
+            result.vigencia_hasta or "—",
+            result.vigencia_puc or "—",
             result.historical,
         ],
     })
@@ -247,12 +268,13 @@ def render_capital_test() -> None:
         st.caption(
             "Referencia temporal: "+result.assignment.fuente+
             " · "+(result.assignment.fecha or "sin fecha")
-            +". Confirmar la fecha efectiva de la asignación."
+            +". Esta prueba inicial equipara firma y asignación; "
+            "la fecha efectiva se verificará en una etapa complementaria."
         )
     if result.notes:
-        st.markdown("**Aspectos por cotejar**")
-        for note in result.notes:
-            st.caption("• "+note)
+        with st.expander("Aspectos para cotejo complementario", expanded=False):
+            for note in dict.fromkeys(result.notes):
+                st.caption("• "+note)
     if result.revision:
         st.caption(
             "Revisión histórica: "+result.revision.fecha_utc+" · "+

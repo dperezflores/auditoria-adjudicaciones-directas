@@ -1,61 +1,78 @@
-# Prueba CC-01 — Capital contable en el PUC (León)
+# CC-01 · Capital contable: revisión masiva de adjudicación directa (León)
 
-## Alcance y fundamento
+## Criterio de referencia
 
-En la app original, bajo Pruebas de adjudicación, se incorporó una pestaña
-«Verificación de capital contable», independiente de «Verificación de límites
-de adjudicación» (AD-06), que continúa funcionando como antes.
+Manual de Procesos y Procedimientos DGOP León, PR-DGOP/DACF-011,
+revisión 02, sección 3, políticas de operación, hoja 2. El criterio
+de capital contable del PUC es el 30 % del monto total de la obra.
 
-Fuente de referencia: Manual de Procesos y Procedimientos de la DGOP León,
-PR-DGOP/DACF-011, rev. 02, sección 3, políticas de operación, hoja 2.
-El manual indica que en adjudicación directa el contratista debe tener
-registrado en su PUC, a fecha de asignación, capital contable de al menos
-30 % del monto total de la obra.
-
-Vínculo oficial:
+Documento de consulta:
 https://www.leon.gob.mx/modulos/img/documentos/obrapublica/procedimientos%20y%20formatos/Manual%20de%20procesos%20y%20procedimientos/14.%20Contrataci%C3%B3n%20de%20obra%20p%C3%BAblica%20y%20servicios%20por%20adjudicaci%C3%B3n%20directa/Procedimiento%20rev02%20Act.%2012-08-2022.pdf
 
-## Cálculo
+## Primera pasada: automática y masiva
 
-- Capital mínimo = monto total del contrato × 30 %, a centavos.
-- Diferencia = capital contable del PUC − capital mínimo.
-- Cobertura (%) = 100 × capital PUC / monto contractual total.
+A petición del auditor, el piloto **equipara operativamente la fecha de firma
+del contrato con la fecha de asignación para la primera revisión**. Esto no
+significa que ambas fechas sean jurídicamente idénticas. Permite clasificar
+masivamente contratos y priorizar posibles riesgos.
 
-El cálculo utiliza el monto contractual total guardado, o el revisado por
-el auditor. No se divide entre 1.16 para esta prueba, ya que el manual
-habla del monto total; si el contrato está expresado sin IVA, no se
-añade el impuesto sin respaldo. La interpretación final de la base
-debe cotejarse con la normativa y el expediente.
+1. Se leen exclusivamente **contratos y PUC activos y analizados** de la
+   misma obra. El monto de contrato y las correcciones guardadas se usan
+   conforme a las reglas actuales de la aplicación. AD-06 no se modifica.
+2. Se comprueba que la cédula PUC esté vigente en la fecha de **firma**.
+   Se reutiliza el **mismo motor anual de AD-03**: si la cédula solo contiene
+   `vigencia_hasta`, el inicio se infiere restando un año calendario.
+   El inicio inferido se muestra como dato calculado, sin alterar el PDF.
+3. Si hay cédula válida, se toma **el capital contable indicado en esa
+   cédula**, como dato de referencia **presuntivo de la primera pasada**.
+4. Se calcula: **capital mínimo = 30 % × monto total contractual**;
+   **diferencia = capital evaluado − mínimo**;
+   **cobertura = capital evaluado ÷ monto contractual × 100**.
+5. La clasificación clara es:
+   - `Cubre el 30% (revisión inicial)`, con vigencia PUC a la firma.
+   - `Capital inferior al 30% (revisión inicial)`.
+   - `PUC fuera de vigencia en fecha de firma`, en caso de vencimiento
+     frente a la cédula presentada, sin afirmar automáticamente que no
+     existía otro refrendo.
+   - Estados pendientes o de revisión si no se pudo validar identidad,
+     firma, vigencia, monto, evidencia del capital o estado del registro.
 
-## Cruce documental y temporal
+Se mantiene el monto total contractual para el cálculo del 30 %, sin dividir
+entre 1.16 ni inventar IVA. La diferencia entre el importe del dictamen y del
+contrato se advierte para cotejo, pero **no bloquea por sí misma** la
+comparación inicial basada en el contrato.
 
-Se leen en Google Sheets las versiones activas de `Documentos`, `Extracciones`, `DatosPUC` y `DatosDictamenAD`, vinculando obra/documento/caché. Los PUC duplicados, modificados, incompletos o no analizados no se aplican. La identidad del contratista se comprueba por RFC o número de registro PUC. LS/LP se marcan `No aplica`.
+## Segunda pasada: documentación complementaria ante SOP
 
-El capital que consta en el PDF disponible **no se presume registrado a la fecha de asignación**, aun si la validación o impresión son anteriores. Una constancia impresa **después** de la asignación tampoco demuestra por sí sola que el capital se registró después.
+**No se exige el historial de actualizaciones para emitir el resultado
+inicial favorable o desfavorable.** Posteriormente, según el riesgo, se podrá
+solicitar a la Secretaría de Obra Pública (SOP) evidencia sobre cambios de
+capital del contratista durante la vigencia del registro, sobre todo
+modificaciones antes del refrendo o renovación siguiente.
 
-El resultado distingue:
+El formulario de revisión histórica `RevisionesPUC` se conserva como
+herramienta voluntaria, con fuente, fecha, referencia, capital oficial
+y responsable del cotejo, sin volver a procesar documentos con Gemini.
 
-- **Comparación aritmética provisional:** capital de constancia × importe contractual total. Se conserva el cálculo del 30 % existente.
-- **Acreditación histórica:** utiliza `capital_historico` y `fecha_registro_capital` solo cuando el auditor ha registrado evidencia verificable, la fecha oficial del movimiento no es posterior a la asignación y el soporte acredita que se trata del **último capital aplicable** mediante historial completo o certificación oficial a fecha. Un movimiento aislado no basta.
-- Sin evidencia de fecha e importe históricos, el estado es `Capital histórico por acreditar`, incluso si la comparación provisional da suficiencia o insuficiencia.
-- Si existe un registro histórico documentado anterior o igual a la asignación, se compara **ese** capital contra el 30 %, mostrando `Capital histórico suficiente (preliminar)` o `Capital histórico inferior al 30% (preliminar)`.
-- Si el movimiento se registró después de asignar, no se utiliza ese capital retroactivamente: `Capital histórico por acreditar`.
+Si se agrega **historial o certificación oficial** que prueba un capital
+distinto y que ya estaba registrado en la fecha aplicable, el sistema compara
+ese importe y lo identifica como `historial SOP`. Si los documentos prueban
+una actualización **posterior** a la fecha aplicable, el sistema muestra
+`Requiere revisión de actualización posterior` y no concede una aprobación
+automática basada en ese movimiento.
 
-La fecha efectiva de asignación la puede asentar el auditor mediante `RevisionesPUC`; la fecha del dictamen es solo referencia preliminar, y la firma del contrato no la sustituye.
+## Precauciones y trazabilidad
 
-## Estados y presentación
+La cifra de una cédula vigente **no prueba por sí sola** la inexistencia
+de cambios de capital dentro del periodo: precisamente por eso el resultado
+se denomina **revisión inicial**. La comprobación de fechas jurídicas,
+movimientos históricos y soporte oficial corresponde a la auditoría
+complementaria. Un estado favorable es una clasificación preliminar para
+trabajo masivo, no una conclusión final de cumplimiento legal.
 
-La tabla muestra carpeta, contrato, contratista, monto total, 30 % requerido, capital de constancia, capital utilizado en la comparación, diferencia, cobertura, resultado aritmético y acreditación histórica, con evidencia y vínculos de origen. La conclusión profesional del auditor y el resultado automático se muestran por separado.
+Los resultados y cédulas se leen de Google Sheets, conservando
+`obra_id`, `documento_id` y `cache_key`. La app no modifica documentos
+originales ni gasta tokens Gemini al comparar contratos.
+La selección por fila y el CSV de CC-01 siguen disponibles.
 
-Para cotejar fechas, refrendos y la condición de inscripción se dispone de la **prueba independiente AD-03 — Verificación de vigencia del PUC**, sin condicionar el cálculo del capital a la fecha de impresión. Ambas pruebas utilizan una hoja adicional `RevisionesPUC` con historial append-only ligado a las versiones actuales de contrato y PUC.
-
-La pantalla de capital conserva la verificación contractual, descarga CSV y acceso al PUC. Consultar o guardar cotejos no activa Gemini. El formulario histórico solicita fuente, referencia y observaciones; la constancia y las extracciones originales no se modifican.
-
-## Precauciones
-
-El resultado es una prueba de gabinete y no determina por sí solo
-incumplimiento legal. Deben revisarse vigencia y aplicabilidad del manual,
-fecha efectiva de asignación y registro histórico de capital.
-La app de pruebas visual permanece intacta.
-
-Pruebas: python -m unittest discover -s tests -v
+Pruebas: `python -m unittest discover -s tests -v`.
