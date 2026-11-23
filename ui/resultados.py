@@ -10,8 +10,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from services.contractor_ranking import rank_contractors
 from services.contract_portfolio import (
     FIELD_LABELS, ContractRecord,
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
@@ -54,6 +56,91 @@ def _filtered_download(records: tuple[ContractRecord, ...]) -> bytes:
         row["Versión de extracción"] = record.source_schema
         row["Fecha de extracción (UTC)"] = record.extracted_at
     return pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig")
+
+
+def _render_top_contractors(
+    records: tuple[ContractRecord, ...], selected_year: str,
+) -> None:
+    """Ranking sobre el MISMO conjunto filtrado que indicadores y listado."""
+    st.markdown("#### Top 10 de contratistas por número de contratos")
+    label_year = (
+        "todos los años" if selected_year == "Todos"
+        else "contratos sin año de firma identificado" if selected_year == "Sin año"
+        else f"contratos firmados en {selected_year}"
+    )
+    st.caption(
+        "Ranking de " + label_year + ". Se actualiza con los filtros de "
+        "búsqueda, año de firma, contratista y estado de extracción. "
+        "Cada barra cuenta contratos, no montos ni carpetas."
+    )
+    ranking = rank_contractors(records, limit=10)
+    if not ranking.top:
+        st.info(
+            "No hay contratistas identificados en los contratos que "
+            "coinciden con los filtros actuales."
+        )
+        return
+
+    names = [entry.name for entry in ranking.top]
+    duplicate_names = {name for name in names if names.count(name) > 1}
+    label_by_entry = [
+        (
+            entry.name + (" · " + entry.rfc if entry.name in duplicate_names and entry.rfc else "")
+        )
+        for entry in ranking.top
+    ]
+    abbreviations = [
+        (label[:54] + "…" if len(label) > 54 else label)
+        for label in label_by_entry
+    ]
+    chart = go.Figure(go.Bar(
+        x=[entry.count for entry in ranking.top],
+        y=list(range(len(ranking.top))),
+        orientation="h",
+        text=[str(entry.count) for entry in ranking.top],
+        textposition="outside",
+        customdata=[
+            [entry.name, entry.rfc or "No identificado", entry.count]
+            for entry in ranking.top
+        ],
+        hovertemplate=(
+            "<b>%{customdata[0]}</b>"
+            "<br>RFC: %{customdata[1]}"
+            "<br><b>Contratos: %{customdata[2]}</b>"
+            "<extra></extra>"
+        ),
+    ))
+    chart.update_layout(
+        height=max(290, 130 + 44 * len(ranking.top)),
+        margin=dict(l=10, r=55, t=20, b=50),
+        showlegend=False,
+        bargap=0.32,
+    )
+    chart.update_xaxes(
+        title_text="Cantidad de contratos", rangemode="tozero",
+        dtick=1, tickformat="d",
+    )
+    chart.update_yaxes(
+        tickmode="array",
+        tickvals=list(range(len(ranking.top))),
+        ticktext=abbreviations,
+        autorange="reversed",
+    )
+    st.plotly_chart(
+        chart, use_container_width=True,
+        key="results_top10_contractors_chart",
+    )
+    st.caption(
+        f"Se identificaron {ranking.unique_contractors} contratista(s) "
+        f"en el conjunto filtrado; se muestran hasta 10. "
+        + (
+            f"{ranking.contracts_without_contractor} contrato(s) sin "
+            "contratista identificable se excluyeron del ranking."
+            if ranking.contracts_without_contractor else
+            "Los nombres solo se homologan cuando coinciden o comparten "
+            "un RFC verificable."
+        )
+    )
 
 
 def _render_aggregate_visuals(records: tuple[ContractRecord, ...]) -> None:
@@ -361,6 +448,8 @@ def render_results() -> None:
         f"Indicadores correspondientes a los filtros actuales. {amount_note} "
         "La suma reúne importes extraídos de los contratos, sin ajustes ni validación de auditoría."
     )
+
+    _render_top_contractors(filtered, year)
 
     st.markdown("#### Listado de obras y contratos")
     if st.session_state.pop("verification_saved_notice",None):
