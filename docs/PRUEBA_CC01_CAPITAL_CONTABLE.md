@@ -36,7 +36,7 @@ El capital que consta en el PDF disponible **no se presume registrado a la fecha
 El resultado distingue:
 
 - **Comparación aritmética provisional:** capital de constancia × importe contractual total. Se conserva el cálculo del 30 % existente.
-- **Acreditación histórica:** utiliza `capital_historico` y `fecha_registro_capital` solo cuando el auditor ha registrado evidencia verificable y la fecha oficial del movimiento no es posterior a la fecha efectiva de asignación.
+- **Acreditación histórica:** utiliza `capital_historico` y `fecha_registro_capital` solo cuando el auditor ha registrado evidencia verificable, la fecha oficial del movimiento no es posterior a la asignación y el soporte acredita que se trata del **último capital aplicable** mediante historial completo o certificación oficial a fecha. Un movimiento aislado no basta.
 - Sin evidencia de fecha e importe históricos, el estado es `Capital histórico por acreditar`, incluso si la comparación provisional da suficiencia o insuficiencia.
 - Si existe un registro histórico documentado anterior o igual a la asignación, se compara **ese** capital contra el 30 %, mostrando `Capital histórico suficiente (preliminar)` o `Capital histórico inferior al 30% (preliminar)`.
 - Si el movimiento se registró después de asignar, no se utiliza ese capital retroactivamente: `Capital histórico por acreditar`.
