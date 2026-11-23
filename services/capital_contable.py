@@ -2,11 +2,12 @@
 
 Alcance: Manual DGOP León PR-DGOP/DACF-011, rev. 02, sección 3, hoja 2.
 El manual exige capital registrado en el PUC a fecha de asignación.
-Separamos el RESULTADO ARITMÉTICO de la COMPROBACIÓN HISTÓRICA.
+Primera pasada masiva: la FIRMA del contrato se utiliza como fecha operativa
+de asignación; se verifica vigencia anual del PUC y 30 % de capital de la
+cédula. La consulta de movimientos históricos ante SOP se deja para una
+segunda revisión, salvo que ya exista evidencia que contradiga la hipótesis.
 
-Solo lee tablas guardadas de Sheets. No descarga ni envía documentos a Gemini,
-no altera la extracción original ni presume que un PUC posterior acredita
-el capital efectivamente registrado en la asignación.
+Solo lee tablas guardadas de Sheets; no llama Gemini ni modifica extracciones.
 """
 from __future__ import annotations
 
@@ -94,6 +95,9 @@ class CapitalResult:
     capital_constancia: Decimal | None = None
     capital_historico_acreditado: bool = False
     revision: PucReview | None = None
+    vigencia_puc: str = ""
+    vigencia_desde: str = ""
+    vigencia_hasta: str = ""
 
 
 def _decode_table(values: Sequence[Sequence[Any]], headers: tuple[str, ...], name: str) -> list[dict[str, str]]:
@@ -253,78 +257,56 @@ def _puc_date(raw: str) -> date | None:
 
 def _historical(
     puc: PucEntry,
-    reference: AssignmentEvidence | None,
     signature: str,
     review: PucReview | None = None,
 ) -> tuple[str, tuple[str, ...]]:
-    """El capital de una cédula actual NO se presume vigente en el pasado.
+    """La revisión histórica es complementaria, no requisito de cada lote.
 
-    Validación/impresión de la cédula son metadatos, no fecha de alta de capital.
-    El historial requiere monto y fecha de registro soportados en fuente
-    documentada y una fecha de asignación efectivamente cotejada.
+    Si ya consta una certificación oficial y muestra capital distinto, se
+    utiliza ese capital únicamente si aplicaba en la fecha de referencia.
+    Un registro POSTERIOR documentado bloquea la aprobación automática.
     """
-    notes = []
-    decision_date = _puc_date(review.fecha_asignacion) if review else None
-    if not decision_date:
-        decision_date = _puc_date(reference.fecha) if reference else None
-        if decision_date:
-            notes.append(
-                "La fecha del dictamen es preliminar, no acredita por sí "
-                "sola la fecha efectiva de asignación."
-            )
-        else:
-            decision_date = _puc_date(signature)
-            notes.append(
-                "Sin fecha de asignación acreditada; firma usada solo como "
-                "referencia contextual, no como fecha de cumplimiento."
-            )
-
-    if puc.fecha_impresion:
-        notes.append(
-            "La fecha de impresión no acredita ni desacredita cuándo se "
-            "inscribió el capital contable ante el padrón."
-        )
-    if puc.fecha_validacion:
-        notes.append(
-            "La validación de la cédula no prueba cuándo se actualizó "
-            "el importe del capital contable."
-        )
-
     if not review or not review.capital_historico:
-        return "Capital histórico por acreditar", tuple(notes + [
-            "Solicitar historial de capital registrado ante el PUC a fecha "
-            "de asignación; no basta la cifra de la constancia disponible."
-        ])
-    if not review.fecha_asignacion:
-        return "Fecha de asignación por acreditar", tuple(notes + [
-            "Registrar la fecha efectiva de asignación con fuente y evidencia."
-        ])
+        return "Seguimiento histórico ante SOP: opcional", (
+            "La primera revisión usa el capital de la cédula vigente en "
+            "la fecha contractual; la confirmación de movimientos históricos "
+            "se reservará para una solicitud complementaria a SOP.",
+        )
     if review.alcance_capital not in (
         "Historial completo hasta asignación",
         "Certificación oficial del capital a fecha",
     ):
-        return "Capital histórico por acreditar", tuple(notes + [
-            "Un movimiento aislado no identifica necesariamente el último "
-            "capital registrado y vigente a la fecha de asignación."
-        ])
+        return "Movimiento aislado: seguimiento ante SOP", (
+            "Un movimiento aislado no demuestra el último capital aplicable "
+            "a la fecha de firma; el cotejo masivo conserva el dato de la cédula.",
+        )
+
+    signed = _puc_date(signature)
+    actual_assignment = _puc_date(review.fecha_asignacion)
+    # En revisión complementaria no ignorar una fecha efectiva anterior
+    # documentada por el auditor. El lote siempre usa la firma.
+    reference_date = (
+        min(signed, actual_assignment)
+        if signed and actual_assignment else signed
+    )
     registered = _puc_date(review.fecha_registro_capital)
-    if not decision_date or not registered:
-        return "Capital histórico por acreditar", tuple(notes + [
-            "Falta fecha verificable de asignación o registro del capital."
-        ])
-    if registered > decision_date:
-        return "Actualización del capital posterior a la asignación", tuple(notes + [
-            "La cifra histórica aportada se registró después de adjudicar; "
-            "no puede acreditar retroactivamente el 30 %."
-        ])
+    if not reference_date or not registered:
+        return "Historial SOP con fechas insuficientes", (
+            "Falta fecha de firma o fecha oficial del movimiento de capital.",
+        )
+    if registered > reference_date:
+        return "Actualización posterior a la fecha de referencia", (
+            "La actualización documentada ocurrió después de la fecha "
+            "aplicable; no permite aprobar retroactivamente con ese capital.",
+        )
     if not review.fuente or not review.referencia:
-        return "Capital histórico por acreditar", tuple(notes + [
-            "Faltan fuente y referencia verificable de la actualización."
-        ])
-    return "Capital histórico documentado (preliminar)", tuple(notes + [
-        "Verificar autenticidad, integridad y antecedentes del historial "
-        "aportado por el auditor antes de concluir sobre cumplimiento."
-    ])
+        return "Historial SOP sin referencia verificable", (
+            "Faltan fuente y soporte identificable del historial.",
+        )
+    return "Capital histórico complementario documentado", (
+        "Importe oficial histórico aplicado a la comparación; revisar "
+        "autenticidad y alcance del soporte ante SOP.",
+    )
 
 def evaluate_capital(
     record: ContractRecord, sources: CapitalSources,
@@ -332,9 +314,10 @@ def evaluate_capital(
 ) -> CapitalResult:
     """Compara 30 % del monto contractual TOTAL, sin convertir a base sin IVA.
 
-    El manual dice «monto total de la obra», sin describir aquí base fiscal.
-    Se usa el importe contractual tal como fue extraído/confirmado (no se
-    suma IVA si es «sin IVA»). Se advierte para cotejo interpretativo.
+    Se usa el importe contractual tal como fue extraído/confirmado (sin
+    sumar IVA supuesto). El 30 % y la vigencia PUC se examinan masivamente
+    con fecha de firma como referencia de asignación; la comprobación
+    histórica del capital se preserva como etapa complementaria.
     """
     norm, norm_notes = normalized_values(record)
     notes = list(norm_notes)
@@ -352,7 +335,16 @@ def evaluate_capital(
         )
 
     puc = sources.puc_by_work.get(record.obra_id)
-    reference = sources.assignments.get(record.obra_id)
+    # Nunca tomar la emisión del dictamen como fecha primaria: para el
+    # examen masivo el usuario ha definido la FIRMA CONTRACTUAL.
+    contract_signature = norm.get("fecha_firma_contrato", "")
+    reference = (
+        AssignmentEvidence(
+            fecha=contract_signature,
+            fuente="Firma del contrato (referencia operativa de asignación)",
+            monto="",
+        ) if _puc_date(contract_signature) else None
+    )
     if review and (review.obra_id != record.obra_id
                    or review.contrato_documento_id != record.documento_id
                    or review.contrato_cache_key != record.cache_key
@@ -360,12 +352,11 @@ def evaluate_capital(
                    or review.puc_cache_key != puc.cache_key):
         notes.append("Revisión histórica de otra versión documental ignorada.")
         review = None
-    if review and review.fecha_asignacion:
-        reference = AssignmentEvidence(
-            fecha=review.fecha_asignacion,
-            fuente="Fecha efectiva asentada por auditor en RevisionesPUC",
-            monto=reference.monto if reference else "",
-        )
+    notes.append(
+        "Primera revisión masiva: fecha de firma usada como fecha "
+        "operativa de asignación; movimientos de capital a confirmar "
+        "posteriormente con SOP, cuando proceda."
+    )
     if not puc:
         reason = sources.issues_by_work.get(
             record.obra_id, "No existe PUC analizado y vinculado con esta obra."
@@ -415,29 +406,31 @@ def evaluate_capital(
             "coincidente; cotejar los datos del PUC."
         )
 
-    historical, hist_notes = _historical(
-        puc, reference, norm.get("fecha_firma_contrato", ""), review
-    )
+    # Motor único de vigencia anual, exactamente igual a la prueba AD-03:
+    # firma dentro del periodo PUC, inicio inferido un año antes del
+    # vencimiento cuando no se expresa. Import local evita dependencia
+    # circular en la carga inicial de los módulos.
+    from services.puc_validity import evaluate_puc_validity
+    validity = evaluate_puc_validity(record, sources, review)
+    notes.extend(validity.notes)
+    historical, hist_notes = _historical(puc, contract_signature, review)
     notes.extend(hist_notes)
-    verified_historical = historical == "Capital histórico documentado (preliminar)"
+    verified_historical = historical == "Capital histórico complementario documentado"
     historical_capital = (
         parse_amount(review.capital_historico)
         if verified_historical and review else None
     )
-    if historical_capital is None:
-        notes.append(
-            "La comparación aritmética utiliza el capital de la constancia "
-            "disponible, NO el capital histórico acreditado."
-        )
     compare_capital = historical_capital if historical_capital is not None else puc.capital
-    mismatched_assignment = False
-    if reference and reference.monto and base is not None:
-        assigned = parse_amount(reference.monto)
+
+    # La fecha y el monto del dictamen se conservan como dato de cotejo;
+    # una diferencia no invalida por sí sola el cálculo masivo sobre contrato.
+    issuance = sources.assignments.get(record.obra_id)
+    if issuance and issuance.monto and base is not None:
+        assigned = parse_amount(issuance.monto)
         if assigned is not None and abs(assigned - base) > CENT:
-            mismatched_assignment = True
             notes.append(
-                "El importe asignado del dictamen y el monto contractual "
-                "no coinciden: cotejar el monto base para calcular el 30 %."
+                "El dictamen refiere un importe diferente al contrato; "
+                "se calculó el 30 % sobre el contrato y se recomienda cotejo posterior."
             )
     if norm.get("iva") == "Sin IVA":
         notes.append(
@@ -458,23 +451,36 @@ def evaluate_capital(
         state = "Requiere revisión de identidad"
     elif required is None:
         state = "Requiere revisión de importes"
-    elif mismatched_assignment:
-        state = "Requiere revisión del monto adjudicado"
+    elif validity.state == "Fuera del periodo PUC en fecha de firma":
+        state = "PUC fuera de vigencia en fecha de firma"
+    elif validity.state != "Vigente en fecha de firma":
+        state = (
+            "Requiere revisión de vigencia PUC"
+            if validity.state.startswith("Requiere revisión")
+            else "Pendiente de vigencia PUC"
+        )
     elif not verified_historical and (not puc.capital_evidence or puc.capital_page is None):
         state = "Requiere revisión de evidencia del capital"
         notes.append(
             "El capital contable carece de página o cita literal en la extracción PUC."
         )
-    elif not verified_historical:
-        state = "Capital histórico por acreditar"
+    elif historical == "Actualización posterior a la fecha de referencia":
+        state = "Requiere revisión de actualización posterior"
+    elif verified_historical:
+        state = (
+            "Cubre el 30% (historial SOP)"
+            if difference is not None and difference >= 0
+            else "Capital inferior al 30% (historial SOP)"
+        )
     else:
         state = (
-            "Capital histórico suficiente (preliminar)"
+            "Cubre el 30% (revisión inicial)"
             if difference is not None and difference >= 0
-            else "Capital histórico inferior al 30% (preliminar)"
+            else "Capital inferior al 30% (revisión inicial)"
         )
     return CapitalResult(
         state, comparison, historical, base, required, compare_capital,
         difference, coverage, puc, reference, tuple(notes),
         puc.capital, verified_historical, review,
+        validity.state, validity.period_from, validity.period_to,
     )
