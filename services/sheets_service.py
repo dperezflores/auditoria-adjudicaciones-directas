@@ -15,6 +15,50 @@ SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 SHEET_ID_MIN_LENGTH = 20
 
 
+class InventoryProtectionError(RuntimeError):
+    """La nueva clasificación no incluye todos los expedientes ya activos."""
+
+
+def assert_existing_works_preserved(
+    inventory: DriveInventory, snapshot: Mapping[str, list[list[object]]],
+) -> None:
+    """Bloquea escrituras si mover carpetas dejó obras/documentos fuera del árbol.
+
+    No permite que una ruta o subcarpeta de grupo mal clasificada marque
+    registros anteriores como inactivos en la hoja maestra.
+    """
+    present_works = {work.id for work in inventory.works}
+    present_docs = {
+        doc.id for work in inventory.works
+        for doc in (*work.pdfs, *(
+            item for item in work.other_files if item.mime_type.endswith(
+                "spreadsheetml.sheet"
+            )
+        ))
+    }
+    missing_works = [
+        str(row[0]) for row in snapshot.get("Obras", [])[1:]
+        if row and len(row) >= 8 and str(row[7]) == "SI"
+        and str(row[0]) not in present_works
+    ]
+    missing_docs = [
+        str(row[0]) for row in snapshot.get("Documentos", [])[1:]
+        if row and len(row) >= 12 and str(row[11]) == "SI"
+        and str(row[0]) not in present_docs
+    ]
+    if missing_works or missing_docs:
+        raise InventoryProtectionError(
+            "Sincronización bloqueada para proteger resultados existentes: "
+            f"{len(missing_works)} obra(s) y {len(missing_docs)} documento(s) "
+            "previamente activos no aparecen bajo las carpetas reconocidas. "
+            "Comprueba que moviste las carpetas originales (no copias), "
+            "que estén dentro de un directorio GRUPO_ o registrado como tal, "
+            "y que Drive permita leer su contenido. "
+            "No se realizó ninguna escritura en Google Sheets. "
+            "IDs de obra afectados: " + ", ".join(missing_works[:5])
+        )
+
+
 def storage_configured(settings: Mapping[str, Any]) -> bool:
     try:
         storage = settings.get("storage", {})
@@ -69,6 +113,8 @@ def sync_to_sheets(
     sheets_client: Any,
     spreadsheet_id: str,
     inventory: DriveInventory,
+    *,
+    protect_existing: bool = False,
 ) -> SyncPlan:
     """Una lectura, una planificación, un batch de escritura por actualización.
 
@@ -76,6 +122,8 @@ def sync_to_sheets(
     reducir duplicados entre sesiones; no sirve como lock distribuido.
     """
     snapshot = read_snapshot(sheets_client, spreadsheet_id)
+    if protect_existing:
+        assert_existing_works_preserved(inventory, snapshot)
     plan = build_plan(inventory, snapshot)
 
     data = []

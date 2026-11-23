@@ -6,6 +6,7 @@ visibles proceden de DatosContrato y de la extracción JSON original.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 import pandas as pd
@@ -19,6 +20,7 @@ from services.contract_portfolio import (
     amount_summary, filter_contracts, money_text, read_contract_portfolio,
 )
 from services.sheets_service import create_sheets_client, storage_configured
+from services.work_groups import ALL_GROUPS, selected_records
 from services.analysis_catalog import load_status_tables
 from services.document_export import (
     export_document_tables, read_registered_works, workbook_bytes,
@@ -401,6 +403,21 @@ def render_results() -> None:
         )
         return
 
+    # Los registros íntegros siguen en Sheets. Esta selección solo limita
+    # los indicadores, Top 10, exportación CSV y tabla, nunca borra extracciones.
+    scoped = selected_records(
+        portfolio.records,
+        st.session_state.get("work_groups_catalog"),
+        st.session_state.get("work_group_selection", ALL_GROUPS),
+    )
+    if not scoped:
+        st.info(
+            "No hay contratos analizados en el grupo de obras seleccionado. "
+            "Elige «Todas las obras» para consultar el histórico completo."
+        )
+        return
+    scoped_portfolio = replace(portfolio, records=scoped)
+
     st.markdown("#### Explorar contratos")
     filter1, filter2, filter3, filter4 = st.columns([2.5, 1, 1.6, 1.5])
     with filter1:
@@ -411,7 +428,7 @@ def render_results() -> None:
         )
     with filter2:
         years = sorted(
-            {r.signature_year for r in portfolio.records},
+            {r.signature_year for r in scoped},
             reverse=True,
         )
         year = st.selectbox(
@@ -419,20 +436,20 @@ def render_results() -> None:
         )
     with filter3:
         contractors = sorted({
-            r.values["contratista"] for r in portfolio.records
+            r.values["contratista"] for r in scoped
             if r.values["contratista"]
         })
         contractor = st.selectbox(
             "Contratista", ["Todos", *contractors], key="results_contractor",
         )
     with filter4:
-        states = sorted({r.status_label for r in portfolio.records})
+        states = sorted({r.status_label for r in scoped})
         state = st.selectbox(
             "Estado de extracción", ["Todos", *states], key="results_state",
         )
 
     filtered = filter_contracts(
-        portfolio, query=search, year=year,
+        scoped_portfolio, query=search, year=year,
         contractor=contractor, status=state,
     )
 

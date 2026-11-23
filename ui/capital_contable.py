@@ -15,6 +15,7 @@ from services.capital_contable import (
     MANUAL_CODE, MANUAL_URL, CapitalSourceError,
     evaluate_capital, read_capital_sources,
 )
+from services.work_groups import ALL_GROUPS, selected_records
 from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values
 from services.capital_risk_chart import (
@@ -220,15 +221,19 @@ def render_capital_test() -> None:
     portfolio=st.session_state["award_limits_contracts"]
     sources=st.session_state["capital_sources"]
     revisions=st.session_state["puc_historical_reviews"]
-    if not portfolio.records:
-        st.warning("No existen contratos analizados para realizar la prueba.")
+    scoped = selected_records(
+        portfolio.records, st.session_state.get("work_groups_catalog"),
+        st.session_state.get("work_group_selection", ALL_GROUPS),
+    )
+    if not scoped:
+        st.info("No hay contratos analizados en el grupo seleccionado.")
         return
     results=[
         (record,evaluate_capital(
             record,sources,latest_puc_review(
                 revisions,record,sources.puc_by_work.get(record.obra_id)
             )
-        )) for record in portfolio.records
+        )) for record in scoped
     ]
     rows=[]
     for record,result in results:
