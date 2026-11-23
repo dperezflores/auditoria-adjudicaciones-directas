@@ -288,6 +288,7 @@ class CapitalContableTests(unittest.TestCase):
             fecha_asignacion="10/12/2025",
             capital_historico="275000.00",
             fecha_registro_capital="01/05/2025",
+            alcance_capital="Historial completo hasta asignación",
             fuente="Certificación de movimientos del PUC",
             referencia="Oficio de padrón 123/2025, folio 4",
             observaciones="Capital oficialmente registrado antes de asignar.",
