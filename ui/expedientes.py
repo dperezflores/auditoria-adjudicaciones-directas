@@ -729,7 +729,8 @@ def _render_bulk_analysis(
         with st.expander(
             "Ver documentos y estado por carpeta", expanded=False,
         ):
-            st.dataframe(pd.DataFrame([
+            st.caption("Selecciona una fila para consultar la obra correspondiente.")
+            decision_event = st.dataframe(pd.DataFrame([
                 {
                     "Carpeta": entry.folder,
                     "Tipo": entry.code,
@@ -738,12 +739,34 @@ def _render_bulk_analysis(
                     "Detalle": entry.detail,
                 }
                 for entry in plan.decisions
-            ]), hide_index=True, use_container_width=True, height=345)
+            ]), hide_index=True, use_container_width=True, height=345,
+                selection_mode="single-row", on_select="rerun",
+                key="ex_bulk_decisions_selectable",
+            )
             st.caption(
                 "Los documentos ya analizados se omiten para evitar gasto "
                 "de IA. Los archivos duplicados, desactualizados o con "
                 "intentos incompletos se excluyen hasta su revisión."
             )
+            decision_work_ids = [
+                work.id for work in inventory.works if work.id in folder_ids
+                for _ in dict.fromkeys(codes)
+            ]
+            selected_rows = decision_event.selection.rows
+            if (
+                selected_rows
+                and len(decision_work_ids) == len(plan.decisions)
+                and 0 <= selected_rows[0] < len(plan.decisions)
+            ):
+                entry = plan.decisions[selected_rows[0]]
+                st.write(
+                    f"**Documento:** {entry.document} · "
+                    f"**Estado:** {entry.status} · {entry.detail}"
+                )
+                _show_bulk_selected_work(
+                    works_by_id[decision_work_ids[selected_rows[0]]],
+                    key="decision",
+                )
 
     batch = plan.pending[:MAX_BATCH]
     if batch:
@@ -754,14 +777,26 @@ def _render_bulk_analysis(
             "Si hay más pendientes, vuelve a pulsar el botón después "
             "de revisar el resultado del bloque."
         )
-        st.dataframe(pd.DataFrame([
+        st.caption("Selecciona un documento en esta tabla para consultar su obra.")
+        batch_event = st.dataframe(pd.DataFrame([
             {
                 "Carpeta": item.work.name,
                 "Documento": item.document.name,
                 "Tipo": item.code,
                 "Tamaño (MB)": round(item.document.size_bytes / 1_000_000, 2),
             } for item in batch
-        ]), hide_index=True, use_container_width=True, height=295)
+        ]), hide_index=True, use_container_width=True, height=295,
+            selection_mode="single-row", on_select="rerun",
+            key="ex_bulk_pending_selectable",
+        )
+        selected_rows = batch_event.selection.rows
+        if selected_rows and 0 <= selected_rows[0] < len(batch):
+            selected_item = batch[selected_rows[0]]
+            st.caption(
+                f"Documento seleccionado: {selected_item.document.name} · "
+                f"Tipo: {selected_item.code}"
+            )
+            _show_bulk_selected_work(selected_item.work, key="pending")
     else:
         st.success(
             "No hay documentos pendientes compatibles con esta selección. "
@@ -805,10 +840,34 @@ def _render_bulk_analysis(
 
     if st.session_state.get("ex_bulk_last_run"):
         st.markdown("#### Resultado del último bloque multicarpeta")
-        st.dataframe(
-            pd.DataFrame(st.session_state["ex_bulk_last_run"]),
+        execution_log = st.session_state["ex_bulk_last_run"]
+        st.caption("Selecciona una fila para consultar la obra procesada.")
+        execution_event = st.dataframe(
+            pd.DataFrame(execution_log),
             hide_index=True, use_container_width=True,
+            selection_mode="single-row", on_select="rerun",
+            key="ex_bulk_completed_selectable",
         )
+        selected_rows = execution_event.selection.rows
+        if selected_rows and 0 <= selected_rows[0] < len(execution_log):
+            executed = execution_log[selected_rows[0]]
+            # El registro previo solo guarda el nombre. Si existen carpetas
+            # homónimas, no asociar una obra de forma arbitraria.
+            matches = [
+                work for work in inventory.works
+                if work.name == executed.get("Carpeta")
+            ]
+            st.caption(
+                f"**Documento:** {executed.get('Documento', '—')} · "
+                f"**Resultado:** {executed.get('Resultado', '—')}"
+            )
+            if len(matches) == 1:
+                _show_bulk_selected_work(matches[0], key="completed")
+            else:
+                st.warning(
+                    "No se identificó una carpeta única para esta fila; "
+                    "selecciona el expediente desde el panel de obras."
+                )
         st.caption(
             "Los documentos finalizados ya no se seleccionarán en el "
             "siguiente bloque. Si algún documento falló o no quedó "
