@@ -155,7 +155,20 @@ def render_capital_test() -> None:
         "histórico; NO se declara cumplimiento por tener capital suficiente "
         "en una constancia, con independencia de su fecha de impresión."
     )
-    st.dataframe(df,hide_index=True,use_container_width=True)
+    st.caption(
+        "Selecciona una fila para ver abajo el detalle del capital, "
+        "las evidencias del PUC y los formularios de revisión de esa obra."
+    )
+    table_event = st.dataframe(
+        df, hide_index=True, use_container_width=True,
+        height=min(520, 85 + len(df) * 38),
+        selection_mode="single-row", on_select="rerun",
+        key="capital_selectable_work_table",
+    )
+    selected_rows = table_event.selection.rows
+    selected = selected_rows[0] if selected_rows else 0
+    if not 0 <= selected < len(results):
+        selected = 0
     st.download_button(
         "Exportar resultados de capital contable (CSV)",
         data=df.to_csv(index=False).encode("utf-8-sig"),
@@ -163,16 +176,7 @@ def render_capital_test() -> None:
         mime="text/csv",key="capital_csv",
     )
 
-    st.markdown("#### Revisar un contrato y sus evidencias")
-    positions=list(range(len(results)))
-    selected=st.selectbox(
-        "Contrato a revisar",positions,key="capital_selected_contract",
-        format_func=lambda i: (
-            results[i][0].nombre_carpeta + " · "
-            + (results[i][0].values.get("numero_contrato")
-               or results[i][0].documento)
-        ),
-    )
+    st.markdown("#### Datos de la obra seleccionada")
     record,result=results[selected]
     normalized,_=normalized_values(record)
     if result.state=="Pendiente de PUC":
