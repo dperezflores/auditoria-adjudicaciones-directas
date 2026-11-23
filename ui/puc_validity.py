@@ -1,4 +1,4 @@
-"""Interfaz AD-03: verificación independiente de vigencia histórica del PUC."""
+"""Interfaz AD-03: fecha de firma frente al año de vigencia del PUC."""
 from __future__ import annotations
 
 import pandas as pd
@@ -18,16 +18,16 @@ from ui.puc_history_form import render_puc_history_form
 def render_puc_validity_test() -> None:
     st.markdown("### Verificación de vigencia del PUC")
     st.caption(
-        "Prueba AD-03 · Vigencia del registro o refrendo en las fechas de "
-        "asignación y firma del contrato · Municipio de León."
+        "Prueba AD-03 · Comparar fecha de firma contractual con el periodo anual "
+        "de vigencia del PUC · Municipio de León."
     )
     st.info(
-        "Se evalúan los periodos de vigencia del PUC, no el capital. "
-        "La impresión de una constancia después de adjudicar NO invalida "
-        "por sí sola el registro. Una cédula sin historial completo tampoco "
-        "prueba automáticamente que el contratista carecía de registro."
+        "**Criterio de la prueba:** verificar si la fecha de firma está dentro "
+        "del periodo del PUC. Cuando la cédula solo indica «Vigencia hasta», "
+        "el inicio se calcula **exactamente un año calendario antes**. "
+        "Las fechas calculadas se identifican y no modifican la extracción original."
     )
-    if st.button("Actualizar contratos y revisiones del PUC", key="puc_validity_reload"):
+    if st.button("Actualizar contratos y PUC guardados", key="puc_validity_reload"):
         for name in ("capital_sources", "award_limits_contracts", "puc_historical_reviews"):
             st.session_state.pop(name, None)
         st.rerun()
@@ -45,7 +45,7 @@ def render_puc_validity_test() -> None:
         st.error("No se pudo verificar el historial PUC: " + str(exc))
         return
     except Exception:
-        st.error("No fue posible consultar contratos, PUC o revisiones en Sheets.")
+        st.error("No fue posible consultar contratos o PUC en Google Sheets.")
         return
 
     portfolio = st.session_state["award_limits_contracts"]
@@ -68,23 +68,21 @@ def render_puc_validity_test() -> None:
             "Contrato": norm.get("numero_contrato") or record.documento,
             "Contratista": norm.get("contratista") or "—",
             "Registro PUC": puc.registro if puc else "—",
-            "Asignación (referencia)": result.assignment_date or "—",
-            "Firma contrato": result.signature_date or "—",
+            "Fecha firma contrato": result.signature_date or "—",
             "Vigencia desde": result.period_from or "—",
+            "Inicio calculado": "Sí (un año antes)" if result.inferred_start else "No",
             "Vigencia hasta": result.period_to or "—",
-            "Comparación asignación": result.assignment_result,
-            "Comparación firma": result.contract_result,
             "Resultado AD-03": result.state,
-            "Conclusión del auditor": review.conclusion_vigencia if review else "Sin revisión",
         })
+
     df = pd.DataFrame(rows)
     a, b, c = st.columns(3)
-    a.metric("Contratos", len(df))
-    b.metric("Compatibilidad preliminar", int(
-        (df["Resultado AD-03"] == "Vigencia documental compatible (preliminar)").sum()
+    a.metric("Contratos evaluados", len(df))
+    b.metric("Vigentes según periodo", int(
+        (df["Resultado AD-03"] == "Vigente en fecha de firma").sum()
     ))
-    c.metric("Pendientes / cotejo", int(
-        (df["Resultado AD-03"] != "Vigencia documental compatible (preliminar)").sum()
+    c.metric("Fuera de periodo", int(
+        (df["Resultado AD-03"] == "Fuera del periodo PUC en fecha de firma").sum()
     ))
     st.dataframe(df, hide_index=True, use_container_width=True)
     st.download_button(
@@ -94,7 +92,7 @@ def render_puc_validity_test() -> None:
         key="puc_validity_csv",
     )
 
-    chosen = st.selectbox(
+    selected = st.selectbox(
         "Contrato a revisar", list(range(len(results))),
         format_func=lambda i: (
             results[i][0].nombre_carpeta + " · "
@@ -103,29 +101,38 @@ def render_puc_validity_test() -> None:
         ),
         key="puc_validity_selected",
     )
-    record, result, review = results[chosen]
-    if result.state == "Vigencia documental compatible (preliminar)":
-        st.success(result.state + " · Sujeto a cotejo del refrendo y fecha efectiva.")
+    record, result, review = results[selected]
+    if result.state == "Vigente en fecha de firma":
+        st.success(result.state)
     else:
         st.warning(result.state)
     st.table({
         "Dato": [
-            "Fecha de asignación", "Fuente de fecha",
-            "Fecha de firma del contrato", "Inicio del periodo acreditado",
-            "Fin del periodo acreditado", "Fuente del periodo",
-            "Estado en asignación", "Estado en firma", "Resultado",
+            "Fecha de firma del contrato",
+            "Vigencia del PUC desde",
+            "Vigencia del PUC hasta",
+            "Origen del intervalo",
+            "Resultado",
         ],
         "Valor": [
-            result.assignment_date or "—", result.assignment_source or "—",
-            result.signature_date or "—", result.period_from or "—",
-            result.period_to or "—", result.period_source or "—",
-            result.assignment_result, result.contract_result, result.state,
+            result.signature_date or "—",
+            result.period_from or "—",
+            result.period_to or "—",
+            result.period_source or "—",
+            result.state,
         ],
     })
+    if result.inferred_start:
+        st.caption(
+            "La fecha «Vigencia desde» es un cálculo del sistema (vencimiento "
+            "menos un año calendario), no un dato transcrito del PDF."
+        )
     if result.puc:
-        with st.expander("Datos literales y evidencia del PUC", expanded=False):
+        with st.expander("Datos originales y evidencia del PUC"):
             st.write("**Registro:**", result.puc.registro or "—")
             st.write("**Estado reportado:**", result.puc.estado_registro or "—")
+            st.write("**Inicio literal:**", result.puc.vigencia_desde or "No indicado")
+            st.write("**Vencimiento literal:**", result.puc.vigencia_hasta or "No indicado")
             st.write("**Validación:**", result.puc.fecha_validacion or "—")
             st.write("**Impresión:**", result.puc.fecha_impresion or "—")
             st.write(
@@ -134,14 +141,14 @@ def render_puc_validity_test() -> None:
             )
     if review:
         st.caption(
-            "Último cotejo manual: " + review.fecha_utc + " · " + review.auditor
-            + " · Conclusión: " + review.conclusion_vigencia
-            + " · Soporte: " + review.referencia
+            "Cotejo adicional registrado: " + review.fecha_utc + " · "
+            + review.auditor + " · Conclusión del auditor: "
+            + review.conclusion_vigencia + " · Soporte: " + review.referencia
         )
     if result.notes:
-        with st.expander("Advertencias y aspectos por cotejar"):
+        with st.expander("Aspectos que requieren cotejo"):
             for note in result.notes:
                 st.caption("• " + note)
-    render_puc_history_form(
-        record, result.puc, reviews, prefix="puc_validity"
-    )
+    # Se conserva el formulario manual histórico ya existente como apoyo
+    # opcional; NO es necesario usarlo para el cálculo automático AD-03.
+    render_puc_history_form(record, result.puc, reviews, prefix="puc_validity")
