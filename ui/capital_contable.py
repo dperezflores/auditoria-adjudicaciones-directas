@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from services.award_limits import money
@@ -16,6 +17,10 @@ from services.capital_contable import (
 )
 from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values
+from services.capital_risk_chart import (
+    CapitalDeficit, contract_selection_key, selected_deficit_record,
+    undercapitalized_contracts,
+)
 from services.puc_history import (
     PucHistoryError, latest_puc_review, read_puc_reviews,
 )
@@ -23,6 +28,121 @@ from ui.puc_history_form import render_puc_history_form
 from services.drive_service import create_drive_client
 from services.sheets_service import create_sheets_client
 from ui.contract_verification import render_verification_form
+
+
+_TABLE_KEY = "capital_selectable_work_table"
+_CHART_KEY = "capital_deficit_selectable_chart"
+_SELECTED_KEY = "capital_active_contract_key"
+
+
+def _select_capital_from_table(contract_keys: tuple[str, ...]) -> None:
+    """La fila del listado actualiza la misma ficha que el gráfico."""
+    event = st.session_state.get(_TABLE_KEY) or {}
+    rows = (event.get("selection") or {}).get("rows") or []
+    if rows and isinstance(rows[0], int) and 0 <= rows[0] < len(contract_keys):
+        st.session_state[_SELECTED_KEY] = contract_keys[rows[0]]
+
+
+def _select_capital_from_chart(valid_keys: tuple[str, ...]) -> None:
+    """La barra usa su ID de contrato, no el nombre repetible del contratista."""
+    event = st.session_state.get(_CHART_KEY) or {}
+    selected_key = selected_deficit_record(event, valid_keys)
+    if selected_key:
+        st.session_state[_SELECTED_KEY] = selected_key
+
+
+def _render_capital_deficit_chart(
+    deficits: tuple[CapitalDeficit, ...],
+) -> None:
+    st.markdown("#### Contratos que no cubren el 30 % del capital")
+    if not deficits:
+        st.info(
+            "No se identificaron contratos con capital inferior al 30 % "
+            "entre los importes comparables. Los expedientes pendientes "
+            "de importe o PUC se revisan en la tabla general."
+        )
+        return
+
+    st.caption(
+        "Cada barra representa **un contrato**, incluso cuando un mismo "
+        "contratista tiene varias obras. Su longitud indica el capital "
+        "**faltante en pesos** para alcanzar el 30 %. "
+        "**Haz clic en una barra** para cargar la ficha y las evidencias "
+        "de esa obra abajo, igual que al seleccionar su fila en la tabla."
+    )
+    total_deficit = sum((item.faltante for item in deficits), start=0)
+    a, b = st.columns(2)
+    a.metric("Contratos con déficit", len(deficits))
+    b.metric("Suma de faltantes por contrato", money(total_deficit))
+
+    labels = [
+        (
+            item.contratista[:39] + ("…" if len(item.contratista) > 39 else "")
+            + " · " + item.contrato[:25]
+        )
+        for item in deficits
+    ]
+    fig = go.Figure(go.Bar(
+        x=[float(item.faltante) for item in deficits],
+        y=list(range(len(deficits))),
+        orientation="h",
+        customdata=[
+            [
+                item.record_key, item.contratista, item.contrato,
+                item.carpeta, float(item.capital), float(item.minimo),
+                str(item.cobertura) if item.cobertura is not None else "—",
+                item.vigencia, item.resultado,
+            ] for item in deficits
+        ],
+        hovertemplate=(
+            "<b>%{customdata[1]}</b>"
+            "<br>Contrato: %{customdata[2]}"
+            "<br>Carpeta: %{customdata[3]}"
+            "<br>Capital evaluado: $%{customdata[4]:,.2f}"
+            "<br>Mínimo requerido: $%{customdata[5]:,.2f}"
+            "<br><b>Faltante: $%{x:,.2f}</b>"
+            "<br>Cobertura contractual: %{customdata[6]} %"
+            "<br>PUC a la firma: %{customdata[7]}"
+            "<br>Resultado: %{customdata[8]}"
+            "<extra></extra>"
+        ),
+    ))
+    fig.update_layout(
+        height=max(350, 105 + 42 * len(deficits)),
+        margin=dict(l=20, r=60, t=25, b=50),
+        clickmode="event+select",
+        dragmode=False,
+        showlegend=False,
+    )
+    fig.update_xaxes(
+        title_text="Capital faltante para alcanzar el 30 % (MXN)",
+        tickprefix="$", tickformat=",.0f", rangemode="tozero",
+    )
+    fig.update_yaxes(
+        tickmode="array", tickvals=list(range(len(deficits))),
+        ticktext=labels, autorange="reversed",
+    )
+    valid_keys = tuple(item.record_key for item in deficits)
+    if len(deficits) > 18:
+        with st.container(height=860, border=False):
+            st.plotly_chart(
+                fig, width="stretch",
+                key=_CHART_KEY, selection_mode="points",
+                on_select=lambda: _select_capital_from_chart(valid_keys),
+                alt="Gráfico de barras seleccionables del déficit de capital por contrato",
+            )
+    else:
+        st.plotly_chart(
+            fig, width="stretch",
+            key=_CHART_KEY, selection_mode="points",
+            on_select=lambda: _select_capital_from_chart(valid_keys),
+            alt="Gráfico de barras seleccionables del déficit de capital por contrato",
+        )
+    st.caption(
+        "Incluye déficits aritméticos aunque la vigencia o identidad del PUC "
+        "requiera cotejo; consulta el estado CC-01 en la ficha seleccionada. "
+        "El gráfico señala riesgos para auditoría, no incumplimientos definitivos."
+    )
 
 
 def _load_capital_data():
@@ -144,6 +264,12 @@ def render_capital_test() -> None:
         })
 
     df=pd.DataFrame(rows)
+    contract_keys = tuple(contract_selection_key(record) for record, _ in results)
+    selected_key = st.session_state.get(_SELECTED_KEY)
+    if selected_key not in contract_keys:
+        selected_key = contract_keys[0]
+        st.session_state[_SELECTED_KEY] = selected_key
+    deficits = undercapitalized_contracts(results)
     states=df["Resultado CC-01"].value_counts()
     a,b,c,d=st.columns(4)
     a.metric("Contratos",len(df))
@@ -158,6 +284,7 @@ def render_capital_test() -> None:
             ("Cubre el 30%", "Capital inferior al 30%")
         )).sum()
     ))
+    _render_capital_deficit_chart(deficits)
     st.markdown("#### Evaluación automática del capital contable")
     st.caption(
         "Clasificación inicial: PUC vigente a fecha de firma + capital de "
@@ -168,16 +295,22 @@ def render_capital_test() -> None:
         "Selecciona una fila para ver abajo el detalle del capital, "
         "las evidencias del PUC y los formularios de revisión de esa obra."
     )
+    # El indicador en la tabla también sigue las selecciones del gráfico.
+    display_df = df.copy()
+    display_df.insert(0, "Seleccionada", [
+        "●" if key == st.session_state[_SELECTED_KEY] else ""
+        for key in contract_keys
+    ])
     table_event = st.dataframe(
-        df, hide_index=True, use_container_width=True,
+        display_df, hide_index=True, use_container_width=True,
         height=min(520, 85 + len(df) * 38),
-        selection_mode="single-row", on_select="rerun",
+        selection_mode="single-row",
+        on_select=lambda: _select_capital_from_table(contract_keys),
         key="capital_selectable_work_table",
     )
     selected_rows = table_event.selection.rows
-    selected = selected_rows[0] if selected_rows else 0
-    if not 0 <= selected < len(results):
-        selected = 0
+    selected_key = st.session_state.get(_SELECTED_KEY)
+    selected = contract_keys.index(selected_key) if selected_key in contract_keys else 0
     st.download_button(
         "Exportar resultados de capital contable (CSV)",
         data=df.to_csv(index=False).encode("utf-8-sig"),
@@ -187,6 +320,10 @@ def render_capital_test() -> None:
 
     st.markdown("#### Datos de la obra seleccionada")
     record,result=results[selected]
+    st.caption(
+        f"**Obra:** {record.nombre_carpeta} · **Contrato:** "
+        f"{normalized_values(record)[0].get('numero_contrato') or record.documento}"
+    )
     normalized,_=normalized_values(record)
     if result.state == "Pendiente de PUC":
         st.warning(
