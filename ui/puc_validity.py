@@ -84,7 +84,20 @@ def render_puc_validity_test() -> None:
     c.metric("Fuera de periodo", int(
         (df["Resultado AD-03"] == "Fuera del periodo PUC en fecha de firma").sum()
     ))
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.caption(
+        "Selecciona una fila para consultar abajo las fechas, la cédula "
+        "del PUC y el resultado de vigencia de esa obra."
+    )
+    table_event = st.dataframe(
+        df, hide_index=True, use_container_width=True,
+        height=min(520, 85 + len(df) * 38),
+        selection_mode="single-row", on_select="rerun",
+        key="puc_validity_selectable_work_table",
+    )
+    selected_rows = table_event.selection.rows
+    selected = selected_rows[0] if selected_rows else 0
+    if not 0 <= selected < len(results):
+        selected = 0
     st.download_button(
         "Exportar verificación de vigencia PUC (CSV)",
         data=df.to_csv(index=False).encode("utf-8-sig"),
@@ -92,15 +105,7 @@ def render_puc_validity_test() -> None:
         key="puc_validity_csv",
     )
 
-    selected = st.selectbox(
-        "Contrato a revisar", list(range(len(results))),
-        format_func=lambda i: (
-            results[i][0].nombre_carpeta + " · "
-            + (normalized_values(results[i][0])[0].get("numero_contrato")
-               or results[i][0].documento)
-        ),
-        key="puc_validity_selected",
-    )
+    st.markdown("#### Datos de la obra seleccionada")
     record, result, review = results[selected]
     if result.state == "Vigente en fecha de firma":
         st.success(result.state)
