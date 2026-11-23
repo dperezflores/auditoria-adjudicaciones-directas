@@ -13,6 +13,7 @@ from services.award_limits import (
     Catalog, LimitsError, PILOT_MUNICIPALITY, evaluate,
     infer_regime, money, read_drive_catalog, year_from_date,
 )
+from services.work_groups import ALL_GROUPS, selected_records
 from services.contract_verifications import read_verified_portfolio
 from services.contract_normalization import normalized_values, verified_fields
 from ui.contract_verification import render_verification_form
@@ -119,13 +120,17 @@ def _render_limits_tab() -> None:
         "Hojas: Base municipal (276 registros) y Base estatal (6 registros). "
         "Este módulo no vuelve a analizar PDF con Gemini."
     )
-    if not portfolio.records:
-        st.warning("Todavía no hay contratos analizados para ejecutar la prueba.")
+    scoped = selected_records(
+        portfolio.records, st.session_state.get("work_groups_catalog"),
+        st.session_state.get("work_group_selection", ALL_GROUPS),
+    )
+    if not scoped:
+        st.info("No hay contratos analizados en el grupo seleccionado.")
         return
 
     evaluations = [
         (record, evaluate(record, catalog))
-        for record in portfolio.records
+        for record in scoped
     ]
     st.markdown("### Evaluación automática de los contratos")
     st.caption(
