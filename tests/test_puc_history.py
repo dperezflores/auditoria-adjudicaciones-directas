@@ -89,47 +89,102 @@ class PucHistoryTests(unittest.TestCase):
 
 
 class PucValidityTests(unittest.TestCase):
-    def test_historical_interval_covers_assignment_and_signature(self):
+    def test_explicit_interval_uses_signature_only(self):
         puc = _puc(
             vigencia_desde="01 de enero de 2025",
             vigencia_hasta="31 de diciembre de 2025",
             fecha_impresion="18 de diciembre de 2025",
         )
         result = evaluate_puc_validity(_contract(), _sources(puc), _review())
-        self.assertEqual(result.state, "Vigencia documental compatible (preliminar)")
-        self.assertEqual(result.assignment_result, "Dentro del periodo aportado")
-        self.assertEqual(result.contract_result, "Dentro del periodo aportado")
-        self.assertTrue(any("impresión" in n for n in result.notes))
+        self.assertEqual(result.state, "Vigente en fecha de firma")
+        self.assertFalse(result.inferred_start)
+        self.assertEqual(result.signature_date, "15/12/2025")
+        self.assertEqual(result.period_from, "01/01/2025")
+        self.assertEqual(result.period_to, "31/12/2025")
 
-    def test_dictamen_only_is_not_final_assignment_date(self):
+    def test_does_not_depend_on_assignment_or_dictamen(self):
         puc = _puc(vigencia_desde="01/01/2025", vigencia_hasta="31/12/2025")
-        result = evaluate_puc_validity(_contract(), _sources(puc))
-        self.assertEqual(result.state, "Pendiente de fecha efectiva de asignación")
+        result = evaluate_puc_validity(_contract(), _sources(puc, date=""))
+        self.assertEqual(result.state, "Vigente en fecha de firma")
 
-    def test_newer_refrendo_does_not_disprove_older_validity(self):
+    def test_missing_start_infers_exactly_one_calendar_year(self):
+        # Ejemplo solicitado: vencimiento 15/06/2025 -> inicio 15/06/2024.
+        puc = _puc(vigencia_desde="", vigencia_hasta="15/06/2025")
+        contract = _contract(fecha_firma_contrato="14/06/2025")
+        result = evaluate_puc_validity(contract, _sources(puc, date=""))
+        self.assertEqual(result.state, "Vigente en fecha de firma")
+        self.assertTrue(result.inferred_start)
+        self.assertEqual(result.period_from, "15/06/2024")
+        self.assertEqual(result.period_to, "15/06/2025")
+        self.assertIn("calculado", result.period_source)
+        # Sin escribir la fecha deducida en la extracción original.
+        self.assertEqual(puc.vigencia_desde, "")
+
+    def test_inclusive_first_and_last_day(self):
+        puc = _puc(vigencia_desde="", vigencia_hasta="15/06/2025")
+        for signed in ("15/06/2024", "15/06/2025"):
+            with self.subTest(firma=signed):
+                result = evaluate_puc_validity(
+                    _contract(fecha_firma_contrato=signed), _sources(puc)
+                )
+                self.assertEqual(result.state, "Vigente en fecha de firma")
+
+    def test_signing_outside_annual_period(self):
+        puc = _puc(vigencia_desde="", vigencia_hasta="15/06/2025")
+        for signed in ("14/06/2024", "16/06/2025"):
+            with self.subTest(firma=signed):
+                result = evaluate_puc_validity(
+                    _contract(fecha_firma_contrato=signed), _sources(puc)
+                )
+                self.assertEqual(
+                    result.state, "Fuera del periodo PUC en fecha de firma"
+                )
+                self.assertTrue(any("refrendo" in n for n in result.notes))
+
+    def test_explicit_beginning_has_priority_over_derived_one(self):
+        puc = _puc(vigencia_desde="01/01/2025", vigencia_hasta="15/06/2025")
+        result = evaluate_puc_validity(
+            _contract(fecha_firma_contrato="15/06/2024"), _sources(puc)
+        )
+        self.assertFalse(result.inferred_start)
+        self.assertEqual(result.period_from, "01/01/2025")
+        self.assertEqual(
+            result.state, "Fuera del periodo PUC en fecha de firma"
+        )
+
+    def test_manual_historical_period_still_supported(self):
         event = _review(vigencia_desde="22/12/2025", vigencia_hasta="22/12/2026")
         result = evaluate_puc_validity(_contract(), _sources(_puc()), event)
-        self.assertEqual(result.state, "Periodo aportado no acredita vigencia")
-        self.assertEqual(result.assignment_result, "Anterior al periodo aportado")
-
-    def test_expired_reference_prompts_search_for_refrendo(self):
-        event = _review(vigencia_desde="01/01/2024", vigencia_hasta="31/12/2024")
-        result = evaluate_puc_validity(_contract(), _sources(_puc()), event)
-        self.assertEqual(result.state, "Periodo aportado no acredita vigencia")
-        self.assertTrue(any("refrendos" in n for n in result.notes))
-
-    def test_missing_start_cannot_be_filled_with_validation_date(self):
-        result = evaluate_puc_validity(
-            _contract(), _sources(_puc(vigencia_desde="")), _review(
-                vigencia_desde="", vigencia_hasta="",
-            ),
+        self.assertEqual(
+            result.state, "Fuera del periodo PUC en fecha de firma"
         )
-        self.assertEqual(result.state, "Pendiente de vigencia histórica")
-        self.assertEqual(result.assignment_result, "Periodo insuficiente")
+        self.assertFalse(result.inferred_start)
+        self.assertEqual(result.period_from, "22/12/2025")
+
+    def test_leap_day_expiry_falls_back_to_february_28(self):
+        puc = _puc(vigencia_desde="", vigencia_hasta="29/02/2024")
+        result = evaluate_puc_validity(
+            _contract(fecha_firma_contrato="28/02/2023"), _sources(puc)
+        )
+        self.assertEqual(result.period_from, "28/02/2023")
+        self.assertEqual(result.state, "Vigente en fecha de firma")
+
+    def test_missing_expiration_is_pending(self):
+        result = evaluate_puc_validity(
+            _contract(), _sources(_puc(vigencia_desde="", vigencia_hasta=""))
+        )
+        self.assertEqual(result.state, "Pendiente de vigencia del PUC")
+
+    def test_missing_signature_is_pending(self):
+        result = evaluate_puc_validity(
+            _contract(fecha_firma_contrato=""),
+            _sources(_puc(vigencia_desde="", vigencia_hasta="31/12/2025")),
+        )
+        self.assertEqual(result.state, "Pendiente de fecha de firma")
 
     def test_suspended_current_cedula_requires_status_review(self):
         result = evaluate_puc_validity(
-            _contract(), _sources(_puc(estado_registro="SUSPENDIDO")), _review()
+            _contract(), _sources(_puc(estado_registro="SUSPENDIDO"))
         )
         self.assertEqual(result.state, "Requiere revisión del estado del registro")
 
@@ -140,11 +195,12 @@ class PucValidityTests(unittest.TestCase):
         result = evaluate_puc_validity(c, _sources(_puc()))
         self.assertEqual(result.state, "No aplica al piloto AD")
 
-    def test_foreign_document_review_cannot_supply_date_or_interval(self):
+    def test_foreign_review_not_applied_to_this_version(self):
         altered = replace(_review(), contrato_cache_key="other_version")
         puc = _puc(vigencia_desde="", vigencia_hasta="31/12/2025")
         result = evaluate_puc_validity(_contract(), _sources(puc), altered)
-        self.assertEqual(result.state, "Pendiente de fecha efectiva de asignación")
+        self.assertEqual(result.state, "Vigente en fecha de firma")
+        self.assertEqual(result.period_from, "31/12/2024")
         self.assertTrue(any("otra versión" in n for n in result.notes))
 
 
