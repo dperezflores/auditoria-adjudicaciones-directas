@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import hashlib
 from datetime import datetime, timezone
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Iterable
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 PDF_MIME = "application/pdf"
@@ -47,6 +47,21 @@ class WorkRecord:
     pdfs: tuple[DocumentRecord, ...] = field(default_factory=tuple)
     url: str = ""
     other_files: tuple[DocumentRecord, ...] = field(default_factory=tuple)
+    group_id: str = ""
+    group_name: str = ""
+
+
+@dataclass(frozen=True)
+class DriveGroup:
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class DriveGroupCatalog:
+    root_id: str
+    groups: tuple[DriveGroup, ...]
+    work_to_group: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -55,6 +70,7 @@ class DriveInventory:
     root_name: str
     works: tuple[WorkRecord, ...]
     synced_at: str
+    groups: tuple[DriveGroup, ...] = ()
 
     @property
     def pdf_total(self) -> int:
@@ -114,9 +130,27 @@ def _list_children(service: Any, parent_id: str) -> list[dict[str, Any]]:
     raise DriveConnectionError("Se excedió el límite de páginas al explorar Drive.")
 
 
-def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
-    """Una obra equivale a cada subcarpeta directa del directorio raíz."""
+def _is_group_folder(name: str, folder_id: str, configured: set[str]) -> bool:
+    """Solo las carpetas declaradas como GRUPO son agrupadoras.
+
+    No inferirlo por tener subcarpetas: una obra puede tener subcarpetas
+    documentales llamadas Contratos, PUC, Anexos, etc.
+    """
+    return folder_id in configured or bool(re.match(
+        r"^GRUPO(?:[_: -]+|\\s*[·]\\s*)\\S", str(name or ""), flags=re.IGNORECASE,
+    ))
+
+
+def _discover_layout(
+    service: Any, root_folder_id: str, group_folder_ids: Iterable[str] = (),
+) -> tuple[dict[str, Any], list[tuple[dict[str, Any], str, str]], tuple[DriveGroup, ...]]:
+    """Detecta obras directas y obras dentro de un nivel de grupos.
+
+    El ID de obra sigue siendo siempre el ID original de su carpeta de Drive,
+    independientemente de la ruta o nombre de la agrupadora.
+    """
     root_folder_id = validate_id(root_folder_id)
+    explicit_ids = {validate_id(x) for x in group_folder_ids}
     root = service.files().get(
         fileId=root_folder_id,
         fields="id,name,mimeType,trashed",
@@ -124,11 +158,56 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
     ).execute()
     if root.get("trashed") or root.get("mimeType") != FOLDER_MIME:
         raise DriveConnectionError("La carpeta raíz no existe o no es una carpeta válida.")
-
-    works = []
+    items: list[tuple[dict[str, Any], str, str]] = []
+    groups: list[DriveGroup] = []
+    seen: set[str] = set()
     for folder in _list_children(service, root_folder_id):
         if folder.get("mimeType") != FOLDER_MIME:
             continue
+        folder_id = validate_id(folder["id"])
+        folder_name = folder.get("name") or "Carpeta sin nombre"
+        if _is_group_folder(folder_name, folder_id, explicit_ids):
+            groups.append(DriveGroup(folder_id, folder_name))
+            for child in _list_children(service, folder_id):
+                if child.get("mimeType") != FOLDER_MIME:
+                    continue
+                child_id = validate_id(child["id"])
+                if child_id in seen:
+                    raise DriveConnectionError(
+                        "Una misma obra aparece en varias ubicaciones; no se sincronizará."
+                    )
+                seen.add(child_id)
+                items.append((child, folder_id, folder_name))
+        else:
+            if folder_id in seen:
+                raise DriveConnectionError("ID de carpeta repetido en inventario.")
+            seen.add(folder_id)
+            items.append((folder, "", ""))
+    groups.sort(key=lambda group: (group.name.casefold(), group.id))
+    return root, items, tuple(groups)
+
+
+def list_drive_groups(
+    service: Any, root_folder_id: str, group_folder_ids: Iterable[str] = (),
+) -> DriveGroupCatalog:
+    """Consulta solo metadatos de carpetas, sin PDFs, IA ni escrituras."""
+    _, folders, groups = _discover_layout(service, root_folder_id, group_folder_ids)
+    return DriveGroupCatalog(
+        root_id=root_folder_id,
+        groups=groups,
+        work_to_group={folder["id"]: group_id for folder, group_id, _ in folders},
+    )
+
+
+def scan_drive(
+    service: Any, root_folder_id: str, group_folder_ids: Iterable[str] = (),
+) -> DriveInventory:
+    """Detecta todas las obras sin confundir un grupo con una carpeta de obra."""
+    root, discovered, groups = _discover_layout(
+        service, root_folder_id, group_folder_ids,
+    )
+    works = []
+    for folder, group_id, group_name in discovered:
         pdfs = []
         other_files = []
         # Explorar también subcarpetas de expediente (p. ej. PUC, Contratos,
@@ -179,6 +258,8 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
             pdfs=tuple(pdfs),
             url=folder.get("webViewLink") or "",
             other_files=tuple(other_files),
+            group_id=group_id,
+            group_name=group_name,
         ))
     works.sort(key=lambda x: (x.name.casefold(), x.id))
     return DriveInventory(
@@ -186,6 +267,7 @@ def scan_drive(service: Any, root_folder_id: str) -> DriveInventory:
         root_name=root.get("name") or "Expedientes",
         works=tuple(works),
         synced_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        groups=groups,
     )
 
 
