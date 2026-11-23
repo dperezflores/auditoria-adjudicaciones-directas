@@ -16,7 +16,7 @@ Prueba independiente de CC-01, en la tercera pestaña de **Pruebas de adjudicaci
 
 ## Revisiones manuales
 
-Desde AD-03 o CC-01 el auditor puede registrar el mismo historial de revisión en la pestaña adicional `RevisionesPUC` de Google Sheets. Los registros son **append-only** y conservan `revision_id`, UTC, correo del auditor, obra, versión exacta de contrato y PUC, fecha efectiva de asignación, periodo histórico, estado, capital históricamente registrado, fecha de su registro, fuente, referencia y conclusión profesional. La revisión más reciente se aplica en memoria a las dos pruebas, siempre que sus identificadores documentales sigan coincidiendo.
+Desde AD-03 o CC-01 el auditor puede registrar el mismo historial de revisión en la pestaña adicional `RevisionesPUC` de Google Sheets. Los registros son **append-only** y conservan `revision_id`, UTC, correo del auditor, obra, versión exacta de contrato y PUC, fecha efectiva de asignación, periodo histórico, estado, capital históricamente registrado, fecha de su registro, alcance del historial (completo, certificación a fecha o movimiento aislado), fuente, referencia y conclusiones profesionales independientes para CC-01 y AD-03. La revisión más reciente se aplica en memoria a las dos pruebas, siempre que sus identificadores documentales sigan coincidiendo.
 
 El formulario requiere fuente, identificación del soporte y explicación; para capital histórico exige **importe y fecha de actualización oficial** juntos. Los campos de capital pueden quedar vacíos si el cotejo solo valida vigencia. Conclusión del auditor y clasificación automática se muestran por separado.
 
