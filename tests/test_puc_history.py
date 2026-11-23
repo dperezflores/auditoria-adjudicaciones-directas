@@ -107,7 +107,7 @@ class PucValidityTests(unittest.TestCase):
         self.assertEqual(result.state, "Pendiente de fecha efectiva de asignación")
 
     def test_newer_refrendo_does_not_disprove_older_validity(self):
-        event = _review(vigencia_desde="22/11/2025", vigencia_hasta="22/11/2026")
+        event = _review(vigencia_desde="22/12/2025", vigencia_hasta="22/12/2026")
         result = evaluate_puc_validity(_contract(), _sources(_puc()), event)
         self.assertEqual(result.state, "Periodo aportado no acredita vigencia")
         self.assertEqual(result.assignment_result, "Anterior al periodo aportado")
