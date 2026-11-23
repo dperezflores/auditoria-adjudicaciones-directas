@@ -42,6 +42,27 @@ entre 1.16 ni inventar IVA. La diferencia entre el importe del dictamen y del
 contrato se advierte para cotejo, pero **no bloquea por sí misma** la
 comparación inicial basada en el contrato.
 
+## Visualización de riesgos y selección por contrato
+
+La pestaña CC-01 incorpora un **gráfico interactivo de barras horizontales**
+con los contratos donde la **comparación aritmética arroja capital inferior al
+30 %**. El eje horizontal indica el **faltante de capital (MXN)**; los casos
+se ordenan por faltante descendente. El gráfico no agrupa contratos de un
+mismo contratista: cada barra representa un documento contractual único,
+identificado por `obra_id`, `documento_id` y `cache_key`.
+
+**Al hacer clic en una barra**, la misma ficha inferior usada por la tabla
+muestra el expediente, resultado CC-01, cálculos, PUC y formularios de
+verificación del contrato elegido. La tabla marca la obra activa en la
+columna `Seleccionada`; al pulsar otra fila de la tabla la ficha vuelve
+a cambiar. No se ejecuta Gemini y no se alteran extracciones ni resultados.
+
+Para fines de priorización, se muestran **todos los déficits aritméticos
+comparables**, incluso si su estado de identidad/vigencia PUC exige
+revisión adicional. La barra presenta los detalles de este estado al
+pasar el cursor, para evitar interpretar la ausencia de vigencia como
+cumplimiento o incumplimiento definitivo.
+
 ## Segunda pasada: documentación complementaria ante SOP
 
 **No se exige el historial de actualizaciones para emitir el resultado
