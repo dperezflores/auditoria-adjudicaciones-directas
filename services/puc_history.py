@@ -22,9 +22,15 @@ HEADERS = (
     "contrato_cache_key", "puc_documento_id", "puc_cache_key",
     "fecha_asignacion", "vigencia_desde", "vigencia_hasta",
     "estado_registro_historico", "capital_historico", "fecha_registro_capital",
-    "fuente", "referencia", "conclusion_auditor", "observaciones", "auditor",
+    "alcance_capital", "fuente", "referencia", "conclusion_capital",
+    "conclusion_vigencia", "observaciones", "auditor",
 )
 CONCLUSIONS = ("Pendiente", "Acreditado", "No acreditado", "No concluyente")
+ALCANCES_CAPITAL = (
+    "", "Historial completo hasta asignación",
+    "Certificación oficial del capital a fecha",
+    "Movimiento aislado: último valor sin acreditar",
+)
 STATES = ("", "VIGENTE", "REFRENDADO", "SUSPENDIDO", "CANCELADO", "NO DETERMINADO")
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -48,9 +54,11 @@ class PucReview:
     estado_registro_historico: str
     capital_historico: str
     fecha_registro_capital: str
+    alcance_capital: str
     fuente: str
     referencia: str
-    conclusion_auditor: str
+    conclusion_capital: str
+    conclusion_vigencia: str
     observaciones: str
     auditor: str
 
@@ -75,7 +83,8 @@ def make_puc_review(
     fecha_asignacion: str = "", vigencia_desde: str = "",
     vigencia_hasta: str = "", estado_registro_historico: str = "",
     capital_historico: str = "", fecha_registro_capital: str = "",
-    fuente: str = "", referencia: str = "", conclusion_auditor: str = "Pendiente",
+    alcance_capital: str = "", fuente: str = "", referencia: str = "",
+    conclusion_capital: str = "Pendiente", conclusion_vigencia: str = "Pendiente",
     observaciones: str = "", revision_id: str | None = None,
 ) -> PucReview:
     ids = (obra_id, contrato_documento_id, contrato_cache_key,
@@ -84,8 +93,11 @@ def make_puc_review(
         raise PucHistoryError("Falta la identidad de contrato o PUC para guardar la revisión.")
     if not _EMAIL.fullmatch(str(auditor or "").strip()):
         raise PucHistoryError("Se requiere una sesión con correo de auditor verificado.")
-    if conclusion_auditor not in CONCLUSIONS or estado_registro_historico not in STATES:
-        raise PucHistoryError("Conclusión o estado histórico del PUC no permitido.")
+    if (conclusion_capital not in CONCLUSIONS
+            or conclusion_vigencia not in CONCLUSIONS
+            or estado_registro_historico not in STATES
+            or alcance_capital not in ALCANCES_CAPITAL):
+        raise PucHistoryError("Conclusión, alcance de capital o estado PUC no permitido.")
     fields = dict(
         fecha_asignacion=fecha_asignacion.strip(), vigencia_desde=vigencia_desde.strip(),
         vigencia_hasta=vigencia_hasta.strip(),
@@ -99,6 +111,10 @@ def make_puc_review(
         raise PucHistoryError("El inicio de vigencia es posterior al vencimiento.")
     if bool(capital_historico.strip()) != bool(parsed["fecha_registro_capital"]):
         raise PucHistoryError("El capital histórico requiere importe y fecha de registro ante el PUC.")
+    if capital_historico.strip() and not alcance_capital:
+        raise PucHistoryError("Indica si el soporte acredita el último capital aplicable a la asignación.")
+    if alcance_capital and not capital_historico.strip():
+        raise PucHistoryError("El alcance del historial de capital requiere importe acreditado.")
     if capital_historico.strip():
         amount = parse_amount(capital_historico.strip())
         if (amount is None or amount < Decimal("0")
@@ -130,8 +146,10 @@ def make_puc_review(
         estado_registro_historico=estado_registro_historico,
         capital_historico=capital_historico.strip(),
         fecha_registro_capital=fields["fecha_registro_capital"],
+        alcance_capital=alcance_capital,
         fuente=fuente.strip(), referencia=referencia.strip(),
-        conclusion_auditor=conclusion_auditor,
+        conclusion_capital=conclusion_capital,
+        conclusion_vigencia=conclusion_vigencia,
         observaciones=observaciones.strip(), auditor=auditor.strip().casefold(),
     )
 
@@ -193,8 +211,9 @@ def save_puc_review(client: Any, spreadsheet_id: str, review: PucReview) -> str:
             "obra_id", "contrato_documento_id", "contrato_cache_key",
             "puc_documento_id", "puc_cache_key", "auditor", "fecha_asignacion",
             "vigencia_desde", "vigencia_hasta", "estado_registro_historico",
-            "capital_historico", "fecha_registro_capital", "fuente", "referencia",
-            "conclusion_auditor", "observaciones",
+            "capital_historico", "fecha_registro_capital", "alcance_capital",
+            "fuente", "referencia", "conclusion_capital", "conclusion_vigencia",
+            "observaciones",
         )
     })
     from services.capital_contable import read_capital_sources
@@ -226,11 +245,11 @@ def save_puc_review(client: Any, spreadsheet_id: str, review: PucReview) -> str:
             body={"requests": [{"addSheet": {"properties": {"title": SHEET}}}]},
         ).execute()
         client.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id, range=f"'{SHEET}'!A1:R1",
+            spreadsheetId=spreadsheet_id, range=f"'{SHEET}'!A1:T1",
             valueInputOption="RAW", body={"values": [list(HEADERS)]},
         ).execute()
     result = client.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id, range=f"'{SHEET}'!A:R",
+        spreadsheetId=spreadsheet_id, range=f"'{SHEET}'!A:T",
         valueInputOption="RAW", insertDataOption="INSERT_ROWS",
         body={"values": [review.values()]},
     ).execute()
