@@ -323,6 +323,19 @@ class CapitalContableTests(unittest.TestCase):
         self.assertIn("posterior", result.historical)
         self.assertEqual(result.capital, result.capital_constancia)
 
+    def test_single_movement_does_not_prove_last_registered_capital(self):
+        contract = _contract()
+        reviewed = self._historical_review(
+            contrato_documento_id=contract.documento_id,
+            contrato_cache_key=contract.cache_key,
+            capital_historico="950000.00",
+            alcance_capital="Movimiento aislado: último valor sin acreditar",
+        )
+        result = evaluate_capital(contract, _sources(_puc()), reviewed)
+        self.assertFalse(result.capital_historico_acreditado)
+        self.assertEqual(result.state, "Capital histórico por acreditar")
+        self.assertEqual(result.capital, result.capital_constancia)
+
     def test_print_after_assignment_does_not_block_certified_prior_capital(self):
         contract = _contract()
         reviewed = self._historical_review(
