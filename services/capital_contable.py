@@ -299,6 +299,14 @@ def _historical(
         return "Fecha de asignación por acreditar", tuple(notes + [
             "Registrar la fecha efectiva de asignación con fuente y evidencia."
         ])
+    if review.alcance_capital not in (
+        "Historial completo hasta asignación",
+        "Certificación oficial del capital a fecha",
+    ):
+        return "Capital histórico por acreditar", tuple(notes + [
+            "Un movimiento aislado no identifica necesariamente el último "
+            "capital registrado y vigente a la fecha de asignación."
+        ])
     registered = _puc_date(review.fecha_registro_capital)
     if not decision_date or not registered:
         return "Capital histórico por acreditar", tuple(notes + [
